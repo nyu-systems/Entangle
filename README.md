@@ -8,17 +8,17 @@
   You can get to know us better through the following channels👇
   <br>
   <a href="https://team.doubao.com/">
-    <img src="https://img.shields.io/badge/Website-%231e37ff?style=for-the-badge&logo=bytedance&logoColor=white"></a>
+    <img src="https://img.shields.io/badge/Website-%231e37ff?style=for-the-badge&logo=bytedance&logoColor=white" style="height:20px"></a>
   <a href="https://github.com/user-attachments/assets/93481cda-a7f3-47f3-b333-fe6b3da86b78">
-    <img src="https://img.shields.io/badge/WeChat-07C160?style=for-the-badge&logo=wechat&logoColor=white"></a>
+    <img src="https://img.shields.io/badge/WeChat-07C160?style=for-the-badge&logo=wechat&logoColor=white" style="height:20px"></a>
  <a href="https://www.xiaohongshu.com/user/profile/668e7e15000000000303157d?xsec_token=ABl2-aqekpytY6A8TuxjrwnZskU-6BsMRE_ufQQaSAvjc%3D&xsec_source=pc_search">
-    <img src="https://img.shields.io/badge/Xiaohongshu-%23FF2442?style=for-the-badge&logo=xiaohongshu&logoColor=white"></a>
+    <img src="https://img.shields.io/badge/Xiaohongshu-%23FF2442?style=for-the-badge&logo=xiaohongshu&logoColor=white" style="height:20px"></a>
   <a href="https://www.zhihu.com/org/dou-bao-da-mo-xing-tuan-dui/">
-    <img src="https://img.shields.io/badge/zhihu-%230084FF?style=for-the-badge&logo=zhihu&logoColor=white"></a>
+    <img src="https://img.shields.io/badge/zhihu-%230084FF?style=for-the-badge&logo=zhihu&logoColor=white" style="height:20px"></a>
 </p>
 
-<p align="center">
-    <img src=https://github.com/user-attachments/assets/c42e675e-497c-4508-8bb9-093ad4d1f216 style="width: 80%">
+<p align="center" style="margin-top: -20px; margin-bottom: -30px;">
+    <img src=https://github.com/user-attachments/assets/c42e675e-497c-4508-8bb9-093ad4d1f216 style="width: 40%">
 </p>
 
 # Entangle
@@ -43,9 +43,10 @@ This also serves as the artifact for ASPLOS's Artifact Evaluation, targetting Av
 For best reproducing, we recommend using the environment we used for the experiments:
 
 - Ubuntu-22.04
-    - Should run on any other Linux distributions (not tested)
-    - Runs on MacOS, but significantly slower (tested)
-    - Cannot run on Windows since we used some Unix-like commands, but you can run on WSL.
+    - ✅️ Linux: should run (not tested)
+    - ✅️ MacOS: can run, but significantly slower (tested)
+    - ❌ Windows: cannot run due to usage of bash commands
+      - ✅️ WSL: can run the tool (tested)
 - Python 3.12
 - Rust supporting edition 2018
 
@@ -76,6 +77,9 @@ cd egger && cargo build --release && cd ..
 ## Examples
 
 Please refer to the [examples/README.md](examples/README.md) for instructions on running examples.
+
+
+-----
 
 
 ## Artifact Evaluation
