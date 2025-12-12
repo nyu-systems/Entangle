@@ -1,3 +1,26 @@
+<div align="center">
+ 👋 Hi, everyone! 
+    <br>
+    We are <b>ByteDance Seed team.</b>
+</div>
+
+<p align="center">
+  You can get to know us better through the following channels👇
+  <br>
+  <a href="https://team.doubao.com/">
+    <img src="https://img.shields.io/badge/Website-%231e37ff?style=for-the-badge&logo=bytedance&logoColor=white"></a>
+  <a href="https://github.com/user-attachments/assets/93481cda-a7f3-47f3-b333-fe6b3da86b78">
+    <img src="https://img.shields.io/badge/WeChat-07C160?style=for-the-badge&logo=wechat&logoColor=white"></a>
+ <a href="https://www.xiaohongshu.com/user/profile/668e7e15000000000303157d?xsec_token=ABl2-aqekpytY6A8TuxjrwnZskU-6BsMRE_ufQQaSAvjc%3D&xsec_source=pc_search">
+    <img src="https://img.shields.io/badge/Xiaohongshu-%23FF2442?style=for-the-badge&logo=xiaohongshu&logoColor=white"></a>
+  <a href="https://www.zhihu.com/org/dou-bao-da-mo-xing-tuan-dui/">
+    <img src="https://img.shields.io/badge/zhihu-%230084FF?style=for-the-badge&logo=zhihu&logoColor=white"></a>
+</p>
+
+<p align="center">
+    <img src=https://github.com/user-attachments/assets/c42e675e-497c-4508-8bb9-093ad4d1f216 style="width: 80%">
+</p>
+
 # Entangle
 
 <p align="left">
@@ -15,7 +38,7 @@ This also serves as the artifact for ASPLOS's Artifact Evaluation, targetting Av
 
 ## Setup
 
-## Recommended Environment
+### Recommended Environment
 
 For best reproducing, we recommend using the environment we used for the experiments:
 
@@ -28,7 +51,7 @@ For best reproducing, we recommend using the environment we used for the experim
 
 Other software recommendation are described in [pyproject.toml](./pyproject.toml) and [Cargo.toml](./egger/Cargo.toml).
 
-## Install Dependencies
+### Install Dependencies
 
 Assuming you have installed
 - `Python` >= 3.12 with `pip` available.
@@ -223,3 +246,7 @@ Please do **not** create a public GitHub issue.
 ## License
 
 This project is licensed under the [Apache-2.0 License](LICENSE).
+
+## About [ByteDance Seed Team](https://team.doubao.com/)
+
+Founded in 2023, ByteDance Seed Team is dedicated to crafting the industry's most advanced AI foundation models. The team aspires to become a world-class research team and make significant contributions to the advancement of science and society.
