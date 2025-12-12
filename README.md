@@ -157,7 +157,7 @@ Setup your environment following instructions in previous [Setup](#setup).
 
 The example input compution graphs are in [examples/data](./examples/data/). Run the commands below to run the refinement inference and verification.
 
-##### Model Verification
+##### 2.1 Model Verification
 
 These three commands run all verification task for each model sequentially. All the verified graphs are bug-free.
 
@@ -171,7 +171,15 @@ python run_all.py qwen2 --all
 python run_all.py aws_llama --all 
 ```
 
-##### Bug Detection
+If you see `Refinement verification succeeded for ...` messages after each run, then it means the verification is successful.
+
+**A Note for OUTPUT directory**: By default, these commands only output the real running commands, which set `$OUTPUT` environment variable as the directory for output logs. The output directory includes:
+- `$OUTPUT/group*`: logs for each step of inference
+- `$OUTPUT/check_impl`: logs for checking user expectations
+- `$OUTPUT/index.html`: visualization for the graphs
+- `$OUTPUT/output.log`: overall log for the whole verification
+
+##### 2.2 Bug Detection
 
 The 4 commands run the verification for all the 4 pairs of graphs **with bugs** introduced in the paper. 
 
@@ -190,7 +198,7 @@ python ./run_all.py missing_layernorm_allreduce  # (Bug 9 in paper)
 
 #### 3. Visualization
 
-To easily compare with results in the paper, run the visualization script to generate figures after step 2 ([Model Verification Part](#model-verification)).
+To easily compare with results in the paper, run the visualization script to generate figures after step 2 ([Model Verification Part](#21-model-verification)).
 
 ```sh
 python visualization.py

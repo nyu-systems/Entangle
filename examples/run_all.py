@@ -95,6 +95,12 @@ def run_one(model, origin_name, target_name, cmd):
     if p.returncode != 0:
         print(f"Command failed: {cmd}")
         exit(p.returncode)
+    if not args.stdout:
+        # Check the output log to see if successful
+        with open(osp.join(output_dir, "output.log"), "r") as f:
+            log_content = f.read()
+            if "Check Implication Succeed!" in log_content:
+                print(f"\033[1;32mRefinement verification succeeded for {osp.basename(output_dir)}\033[0m\n")
 
 
 def main():
