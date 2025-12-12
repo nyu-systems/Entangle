@@ -38,7 +38,25 @@ This also serves as the artifact for ASPLOS's Artifact Evaluation, targetting Av
 
 ## Setup
 
-### Recommended Environment
+### CloudLab Setup
+
+If you are using CloudLab, we provide a CloudLab profile and a single script to automatically set up the environment.
+
+You can find the profile [here](https://www.cloudlab.us/p/rdma-prefetch/Entangle). After starting an experiment with this profile, login to the shell and run the following commands to setup (you don't need to clone the repository in advance):
+
+```sh
+wget https://raw.githubusercontent.com/nyu-systems/Entangle/refs/heads/main/cloudlab_setup.sh -O $HOME/cloudlab_setup.sh && source $HOME/cloudlab_setup.sh
+```
+
+The script will
+1. install Rust (cargo), uv
+2. clone the repository to `/opt/tiger/Entangle`
+3. set up the Python environment with uv
+4. build and installs Entangle
+
+### Manual Setup
+
+#### Recommended Environment
 
 For best reproducing, we recommend using the environment we used for the experiments:
 
@@ -52,7 +70,7 @@ For best reproducing, we recommend using the environment we used for the experim
 
 Other software recommendation are described in [pyproject.toml](./pyproject.toml) and [Cargo.toml](./egger/Cargo.toml).
 
-### Install Dependencies
+#### Install Dependencies
 
 Assuming you have installed
 - `Python` >= 3.12 with `pip` available.
