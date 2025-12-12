@@ -104,7 +104,7 @@ Please refer to the [examples/README.md](examples/README.md) for instructions on
 
 Thank you for your reviews.
 
-This artifact is our implementation of the inductive relation refinement method described in the paper. We also provides input computation graphs for the open-source frameworks, but we choose not to publish the graphs of the company's proprietary models. 
+This artifact is our implementation of the inductive relation refinement method described in the paper. We also provides input computation graphs for the open-source frameworks, but unfortunately, we cannot publish the graphs of the company's proprietary models. 
 
 With this repository, the performance results for verification graphs from open-source frameworks can be reproduced, including
 
@@ -157,19 +157,40 @@ Setup your environment following instructions in previous [Setup](#setup).
 
 The example input compution graphs are in [examples/data](./examples/data/). Run the commands below to run the refinement inference and verification.
 
+##### Model Verification
+
+These three commands run all verification task for each model sequentially. All the verified graphs are bug-free.
+
 ```sh
 # Assuming you are in `examples`
-# gpt starts 16 runs sequentially
+# gpt starts 16 runs sequentially (TP degrees are 2, 4, 6, 8, and numbers of layers are 1, 2, 4, 8)
 python run_all.py gpt --all
-# qwen2 starts 2 runs sequentially
+# qwen2 starts 2 runs sequentially (TP degrees are 2, 4, and number of layers is 1)
 python run_all.py qwen2 --all
-# aws_llama starts 12 runs sequentially
+# aws_llama starts 12 runs sequentially (TP degrees are 2, 4, 8, and numbers of layers are 1, 2, 4, 8)
 python run_all.py aws_llama --all 
 ```
 
+##### Bug Detection
+
+The 4 commands run the verification for all the 4 pairs of graphs **with bugs** introduced in the paper. 
+
+The verification is **expected to raise errors**. If you get any of the errors below, then it means the bug is successfully detected:
+
+- entangle.sgraph.egraph.CannotFindPostconditions: <span style="color: red">Failed, check the conditions above.</span>
+- entangle.tools.egg.FailedImplyingEquivalence: <span style="color: red">User expectation violated.</span>
+
+```sh
+python ./run_all.py grad_accumulation  # (Bug 6 in paper)
+python ./run_all.py missing_allreduce_under_wrong_config  # (Bug 7 in paper)
+python ./run_all.py missing_switchmlp_allreduce  # (Bug 8 in paper)
+python ./run_all.py missing_layernorm_allreduce  # (Bug 9 in paper)
+```
+
+
 #### 3. Visualization
 
-To easily compare with results in the paper, run the visualization script to generate figures after step 2.
+To easily compare with results in the paper, run the visualization script to generate figures after step 2 ([Model Verification Part](#model-verification)).
 
 ```sh
 python visualization.py

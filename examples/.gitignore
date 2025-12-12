@@ -5,6 +5,10 @@ tgcache
 figures
 
 !data/aws_llama
+!data/bug_grad_accumulation
+!data/bug_missing_allreduce_under_wrong_config
+!data/bug_missing_layernorm_allreduce
+!data/bug_missing_switchmlp_allreduce
 !data/gpt
 !data/qwen2
 !data/README.md

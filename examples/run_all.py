@@ -18,14 +18,18 @@ from subprocess import DEVNULL, PIPE, STDOUT, Popen
 
 parser = argparse.ArgumentParser("Experiments Runner")
 parser.add_argument(
-    "model",
+    "task",
     type=str,
     choices=[
         "gpt",
         "qwen2",
         "aws_llama",
+        "grad_accumulation",
+        "missing_allreduce_under_wrong_config",
+        "missing_layernorm_allreduce",
+        "missing_switchmlp_allreduce",
     ],
-    help="Model name.",
+    help="Task name. Either model name to verify (gpt|qwen2|aws_llama), or bugs to detect (grad_accumulation|missing_allreduce_under_wrong_config|missing_layernorm_allreduce|missing_switchmlp_allreduce).",
 )
 parser.add_argument(
     "--all",
@@ -66,12 +70,8 @@ parser.add_argument(
     "--dry_run",
     action="store_true",
 )
-parser.add_argument(
-    "--disable_rich", action="store_true", help="Disable rich printing."
-)
-parser.add_argument(
-    "--verbose", action="store_true", help="Enable verbose output."
-)
+parser.add_argument("--disable_rich", action="store_true", help="Disable rich printing.")
+parser.add_argument("--verbose", action="store_true", help="Enable verbose output.")
 args = parser.parse_args()
 
 
@@ -98,54 +98,90 @@ def run_one(model, origin_name, target_name, cmd):
 
 
 def main():
-    model = args.model
+    model = args.task
 
     tg_args = ""
     if args.disable_rich:
         tg_args += " --disable_rich"
 
-    if model == "gpt":
-        if args.all:
-            num_layers_list = [1, 2, 4, 8]
-            tp = [2, 4, 6, 8]
+    if args.task in ("aws_llama", "gpt", "qwen2"):
+        model = args.task
+
+        if model == "gpt":
+            if args.all:
+                num_layers_list = [1, 2, 4, 8]
+                tp = [2, 4, 6, 8]
+            else:
+                num_layers_list = args.num_layers
+                tp = args.tp
+            for num_layers in num_layers_list:
+                for tp_size in tp:
+                    origin_name = f"paral1_layer{num_layers}"
+                    target_name = f"paral{tp_size}_layer{num_layers}"
+                    args.graph_prefix = "fw.g0"
+                    cmd = f"tg {tg_args} infer -g data/{model} --origin {origin_name} --target {target_name} --graph_prefix {args.graph_prefix} --config_module verify_{model}.py --tp={tp_size} --num_layers={num_layers} --infer_manager greedy --stats"
+                    run_one(model, origin_name, target_name, cmd)
+        elif model == "qwen2":
+            if args.all:
+                num_layers_list = [1]
+                tp = [2, 4]
+            else:
+                num_layers_list = args.num_layers
+                tp = args.tp
+            for num_layers in num_layers_list:
+                for tp_size in tp:
+                    origin_name = f"paral1_layer{num_layers}"
+                    target_name = f"paral{tp_size}_layer{num_layers}"
+                    args.graph_prefix = "fw.g0"
+                    cmd = f"tg {tg_args} infer -g data/{model} --origin {origin_name} --target {target_name} --graph_prefix {args.graph_prefix} --config_module verify_{model}.py --tp={tp_size} --num_layers={num_layers} --infer_manager greedy --stats"
+                    run_one(model, origin_name, target_name, cmd)
         else:
-            num_layers_list = args.num_layers
-            tp = args.tp
-        for num_layers in num_layers_list:
-            for tp_size in tp:
-                origin_name = f"paral1_layer{num_layers}"
-                target_name = f"paral{tp_size}_layer{num_layers}"
-                args.graph_prefix = "fw.g0"
-                cmd = f"tg {tg_args} infer -g data/{model} --origin {origin_name} --target {target_name} --graph_prefix {args.graph_prefix} --config_module verify_{model}.py --tp={tp_size} --num_layers={num_layers} --infer_manager greedy --stats"
-                run_one(model, origin_name, target_name, cmd)
-    elif model == "qwen2":
-        if args.all:
-            num_layers_list = [1]
-            tp = [2, 4]
+            assert model == "aws_llama"
+            if args.all:
+                num_layers_list = [1, 2, 4, 8]
+                tp = [2, 4, 8]
+            else:
+                num_layers_list = args.num_layers
+                tp = args.tp
+            for num_layers in num_layers_list:
+                for tp_size in tp:
+                    origin_name = f"tp1_layer{num_layers}"
+                    target_name = f"tp{tp_size}_layer{num_layers}"
+                    args.graph_prefix = "fw.g0"
+                    cmd = f"tg {tg_args} infer -g data/{model} --origin {origin_name} --target {target_name} --graph_prefix {args.graph_prefix} --config_module verify_{model}.py --tp={tp_size} --num_layers={num_layers} --infer_manager greedy --stats"
+                    run_one(model, origin_name, target_name, cmd)
+    elif args.task in (
+        "grad_accumulation",
+        "missing_allreduce_under_wrong_config",
+        "missing_layernorm_allreduce",
+        "missing_switchmlp_allreduce",
+    ):
+        task = args.task
+        if task == "grad_accumulation":
+            origin_name = "1step"
+            target_name = "2step.bug"
+            args.graph_prefix = "fw.g0"
+            cmd = f"tg {tg_args} infer -g data/bug_grad_accumulation --origin {origin_name} --target {target_name} --graph_prefix {args.graph_prefix} --config_module detect_bug_grad_accumulation.py --infer_manager greedy --stats"
+            run_one(model, origin_name, target_name, cmd)
+        elif task == "missing_allreduce_under_wrong_config":
+            origin_name = "tp1"
+            target_name = "tp2.bug"
+            args.graph_prefix = "both.g0"
+            cmd = f"tg {tg_args} infer -g data/bug_missing_allreduce_under_wrong_config --origin {origin_name} --target {target_name} --graph_prefix {args.graph_prefix} --config_module detect_bug_missing_allreduce_under_wrong_config.py --infer_manager greedy --stats"
+            run_one(model, origin_name, target_name, cmd)
+        elif task == "missing_switchmlp_allreduce":
+            origin_name = "tp1"
+            target_name = "tp2.bug"
+            args.graph_prefix = "both.g0"
+            cmd = f"tg {tg_args} infer -g data/bug_missing_switchmlp_allreduce --origin {origin_name} --target {target_name} --graph_prefix {args.graph_prefix} --config_module detect_bug_missing_switchmlp_allreduce.py --infer_manager greedy --stats"
+            run_one(model, origin_name, target_name, cmd)
         else:
-            num_layers_list = args.num_layers
-            tp = args.tp
-        for num_layers in num_layers_list:
-            for tp_size in tp:
-                origin_name = f"paral1_layer{num_layers}"
-                target_name = f"paral{tp_size}_layer{num_layers}"
-                args.graph_prefix = "fw.g0"
-                cmd = f"tg {tg_args} infer -g data/{model} --origin {origin_name} --target {target_name} --graph_prefix {args.graph_prefix} --config_module verify_{model}.py --tp={tp_size} --num_layers={num_layers} --infer_manager greedy --stats"
-                run_one(model, origin_name, target_name, cmd)
-    elif model == "aws_llama":
-        if args.all:
-            num_layers_list = [1, 2, 4, 8]
-            tp = [2, 4, 8]
-        else:
-            num_layers_list = args.num_layers
-            tp = args.tp
-        for num_layers in num_layers_list:
-            for tp_size in tp:
-                origin_name = f"tp1_layer{num_layers}"
-                target_name = f"tp{tp_size}_layer{num_layers}"
-                args.graph_prefix = "fw.g0"
-                cmd = f"tg {tg_args} infer -g data/{model} --origin {origin_name} --target {target_name} --graph_prefix {args.graph_prefix} --config_module verify_{model}.py --tp={tp_size} --num_layers={num_layers} --infer_manager greedy --stats"
-                run_one(model, origin_name, target_name, cmd)
+            assert task == "missing_layernorm_allreduce"
+            origin_name = "tp1"
+            target_name = "tp2.bug"
+            args.graph_prefix = "bw.g0"
+            cmd = f"tg {tg_args} infer -g data/bug_missing_layernorm_allreduce --origin {origin_name} --target {target_name} --graph_prefix {args.graph_prefix} --config_module detect_bug_missing_layernorm_allreduce.py --infer_manager greedy --stats"
+            run_one(model, origin_name, target_name, cmd)
     else:
         raise ValueError(f"Unknown model: {model}")
 
