@@ -162,6 +162,8 @@ The figures will be saved to `examples/figures`, including
 - `GPT_scalability.pdf`, `Llama-3_scalibility.pdf`: the scalability results (Figure 4), where you should see a bit super-linear time cost increasing with the parallel degrees and linear time cost increasing with the model sizes.
 - `lemma_applied_count_heatmap.pdf`: the heatmap of lemma application counts (Figure 6), where you should see something similar to the one in the paper.
 
+For your convenience, we also provide reference figures in [examples/reference_figures](./examples/reference_figures) to compare.
+
 #### 4. (Optional) Try for Your Models
 
 Refer to [Use Your Own Models](#use-your-own-models) for instructions on capturing graphs from your own models and running verification.
