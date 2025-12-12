@@ -12,6 +12,7 @@ dependencies = [
     "matplotlib>=3.9.2",
     "networkx>=3.2.1",
     "pandas>=2.3.3",
+    "pip>=25.3",
     "pydot>=3.0.2",
     "pyparsing>=3.2.0",
     "pytimeparse==1.1.8",
