@@ -1,0 +1,28 @@
+[package]
+name = "egger"
+version = "0.1.0"
+authors = ["Zhanghan Wang <hankzhwang@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+env_logger = { version =  "0.7" }
+pest = "2.0"
+pest_derive = "2.0"
+rand = "0.7"
+clap = "2.33"
+itertools = "0.9"
+arrayvec = "0.5.1"
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+tempdir = "0.3.7"
+egg = "0.10.0"
+colored = "2.1.0"
+regex = "1.11.1"
+smtlib = "0.2.0"
+smtlib-lowlevel = "0.2.0"
+parking_lot = "0.12.3"
+
+[build-dependencies]
+bindgen = "0.54.0"

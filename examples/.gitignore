@@ -1,0 +1,10 @@
+data/*
+lib
+precondition*
+tgcache
+figures
+
+!data/aws_llama
+!data/gpt
+!data/qwen2
+!data/README.md
