@@ -174,29 +174,21 @@ pub fn get_rules(manager: SymValManagerRef, verbose: bool) -> Vec<LambdaRewrite>
                 };
                 let pattern_src = concat_shape.clone();
                 let pattern_dst = shape.clone();
-
                 let shape1 = if let Some(v)=try_get_val_shape_from_name(egraph, subst, "?shape1", la.manager.clone()) { v } else { return 0; };
                 let shape2 = if let Some(v)=try_get_val_shape_from_name(egraph, subst, "?shape2", la.manager.clone()) { v } else { return 0; };
-
                 let mut potential_new_info: Vec<(usize, &str)> = vec![];
-
                 if dim == 1 && pattern_src.len() == 2 && pattern_dst.len() == 4 && shape1.len() == 4 && shape2.len() == 4
                     && shape[..2] == shape1[..2] && shape[..2] == shape2[..2] && shape[3] == shape1[3] && shape[3] == shape2[3]
                     && shape[2] == shape1[2] + shape2[2]
-                {
-                    // After partitioning fused qkv, there is a reshape [b*s, nh*h] -> [s, b, nh, h]
-                    // When t1 is [b*s, nh1*h] and t2 is [b*s, nh2*h]. The concat can be swapped.
+                {   // After partitioning fused qkv, there is a reshape [b*s, nh*h] -> [s, b, nh, h]. When t1 is [b*s, nh1*h] and t2 is [b*s, nh2*h]. The concat can be swapped.
                     potential_new_info.push((2, "1"));
                 } else if dim == 2 && pattern_src.len() == 4 && pattern_dst.len() == 2 && shape1.len() == 2 && shape2.len() == 2
                     && shape[0] == t1_shape[0] * t1_shape[1] && shape[0] == t2_shape[0] * t2_shape[1]
                     && shape[1] == t1_shape[2] * t1_shape[3] + t1_shape[2] * t1_shape[3]
                     && shape[0] == shape1[0] && shape[0] == shape2[0] && shape[1] == shape1[1] + shape2[1]
-                {
-                    // After attention, there is a reshape back [s, b, nh, h] -> [b*s, nh*h]
-                    // When t1 is [b,s,nh1,h] and t2 is [b,s,nh2,h]. The concat can be swapped.
+                {   // After attention, there is a reshape back [s, b, nh, h] -> [b*s, nh*h]. When t1 is [b,s,nh1,h] and t2 is [b,s,nh2,h]. The concat can be swapped.
                     potential_new_info.push((1, "2"));
                 }
-
                 let mut unioned_count = 0;
                 for (new_dim, case) in potential_new_info {
                     let unioned = la.union(egraph, subst, "?rc", &format!("(concat ?rc1 ?rc2 {new_dim})"));

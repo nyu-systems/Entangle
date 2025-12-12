@@ -38,7 +38,7 @@ This also serves as the artifact for ASPLOS's Artifact Evaluation, targetting Av
 
 ## Setup
 
-### CloudLab Setup
+### Option 1: CloudLab Setup
 
 If you are using CloudLab, we provide a CloudLab profile and a single script to automatically set up the environment.
 
@@ -54,7 +54,7 @@ The script will
 3. set up the Python environment with uv
 4. build and installs Entangle
 
-### Manual Setup
+### Option 2: Manual Setup
 
 #### Recommended Environment
 
@@ -68,7 +68,7 @@ For best reproducing, we recommend using the environment we used for the experim
 - Python 3.12
 - Rust supporting edition 2018
 
-Other software recommendation are described in [pyproject.toml](./pyproject.toml) and [Cargo.toml](./egger/Cargo.toml).
+Other software recommendation are described in [pyproject.toml](./pyproject.toml) and [Cargo.toml](./egger/Cargo.toml), and can be installed following the [Install Dependencies](#install-dependencies) instructions below.
 
 #### Install Dependencies
 
@@ -110,6 +110,7 @@ With this repository, the performance results for verification graphs from open-
 
 - (Figure 3) End-to-end verification time across different models
 - (Figure 4) Scalability on verifying parallelized models.
+- (Figure 5) Lemmas complexity statistics (which requires manual counting and the results are put in the [visualization script](./examples/visualization.py)).
 - (Figure 6) Heatmap showing the number of times each lemmas is used for different models.
 
 This repository does NOT contain codes to draw Figure 5 since it relies human efforts to manually count the lines of codes (LOC).
@@ -206,7 +207,9 @@ python visualization.py
 
 The figures will be saved to `examples/figures`, including
 - `one_layer_time.pdf`: the end-to-end verification time results (Figure 3). The performance results can vary when you use different hardwares.
-- `GPT_scalability.pdf`, `Llama-3_scalibility.pdf`: the scalability results (Figure 4), where you should see a bit super-linear time cost increasing with the parallel degrees and linear time cost increasing with the model sizes.
+- `GPT_scalability.pdf`, `Llama-3_scalability.pdf`: the scalability results (Figure 4), where you should see a bit super-linear time cost increasing with the parallel degrees and linear time cost increasing with the model sizes.
+- `number_of_ops_and_lemmas.pdf`: the number of operators and lemmas used (Figure 5.a), where you should see the same number as the one in the paper (except that data of company's proprietary models are removed).
+- `lemma_loc.pdf`: the CDF of LOC of the lemmas (Figure 5.b), where you should see a similar trend as the one in the paper (you will see some differences since we only include open-sourced models/framworks here).
 - `lemma_applied_count_heatmap.pdf`: the heatmap of lemma application counts (Figure 6), where you should see something similar to the one in the paper.
 
 For your convenience, we also provide reference figures in [examples/reference_figures](./examples/reference_figures) to compare.
