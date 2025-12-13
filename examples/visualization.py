@@ -1,5 +1,8 @@
 # Copyright (c) 2025 ByteDance Ltd. and/or its affiliates
 #
+# Modifications Copyright (c) 2025 [Zhanghan Wang]
+# Note: Fixed heatmap plotting.
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -377,26 +380,43 @@ def plot_heatmap():
         common_names = []
         hlo_names = []
         vllm_names = []
-        internal_names = []
         for name in names:
             if name.startswith("hlo"):
                 hlo_names.append(name)
             elif name.startswith("vllm"):
                 vllm_names.append(name)
-            elif name.startswith("internal") or name.startswith("rms_"):
-                internal_names.append(name)
             else:
                 common_names.append(name)
         lemma_names.extend(common_names)
         lemma_names.extend(hlo_names)
         lemma_names.extend(vllm_names)
-        lemma_names.extend(internal_names)
         seen_lemma_names.update(lemma_applied_count.keys())
+    
+    # fmt:off
+    ordered_lemma_names = ['transpose-reshape-swap', 'transpose-slice-swap', 'index_put-mask_select-to_sum-swap', 'reduce_add-to-matadd-rewrite', 'reshape-to-same-shape', 'reshape-reshape-collapse', 'reshape-slice-swap', 'bmm_alpha-reshape-swap', 'reshape-masked_select-swap', 'baddbmm-to-bmm_alpha', 'reshape-concat-swap', 'transpose-concat-swap', 'index_put-mask_select-swap', 'matadd-0-back', 'matmul-second-concat-swap', 'matmul-first-concat-swap', 'reshape-reduce_add-swap', 'reshape-matadd-swap', 'inverse-matsub', 'consecutive-slices-back', 'matmul-first-slice-swap', 'matadd-dual_concat-swap', 'slice-concat-swap', 'bmm-to-bmm_alpha', 'matadd-slice-swap', 'demerge-index', 'layernorm-concat-swap', 'bmm_alpha-concat-swap', 'full-slice_scatter-back', 'full-slice-back', 'slice_scatter-concat-rewrite', 'transpose-reduce_add-swap', 'tranpose-matadd-swap', 'layernorm-slice-swap', 'mask_fill_scalar-concat-swap', 'matmul-both-concat-swap', 'matadd-concat-swap', 'max_dim_0-concat-swap', 'matsub-concat-swap', 'exp-concat-swap', 'sum-concat-swap', 'index-merge', 'softmax-concat-swap', 'gelu-concat-swap', 'concat-concat-2-2-swap', 'concat-slice-swap', 'slice-slice-swap', 'matmul-second-slice-swap', 'addmm-slice-swap', 'slice_scatter-consecutive', 'slice-slice_scatter-back', 'addmm-concat-swap', 'or-zeros-is-self', 'matadd-rhs-zeros-back', 'ge-lt-and-empty-range-is-zeros', 'ewmul-zeros-is-zeros', 'vllm_rotary_embedding_ignore_q', 'vllm_rotary_embedding-concat-swap', 'vllm_silu_and_mul-rewrite', 'vllm_attention-concat-swap', 'ewmul-dual-concat-swap', 'matsub-dual_concat-swap', 'matdiv-dual_concat-swap', 'hlo_dot-concat-rhs-swap', 'hlo_dot-slice-swap', 'hlo_broadcast-concat-swap', 'hlo_broadcast-maybe-concat', 'hlo_dot-dual-concat-swap', 'hlo_select-all-concat-swap', 'hlo_max-concat-swap', 'hlo_logistic-concat-swap', 'hlo_dot-concat-lhs-swap']
+    # fmt:on
 
-    df = pd.DataFrame(columns=list(lemma_names))
+    index = []
+    heat_rows = []
     for name, lemma_applied_count in lemma_applied_count_list:
-        df.loc[name, lemma_applied_count.keys()] = list(lemma_applied_count.values())
-    df = df.fillna(float("nan")).sort_values("GPT(4)", axis=1, ascending=False).apply(lambda x: np.log2(x))
+        index.append(name)
+        row = {}
+        for lemma_name in ordered_lemma_names:
+            if lemma_name in lemma_applied_count:
+                row[lemma_name] = lemma_applied_count[lemma_name]
+            else:
+                row[lemma_name] = float("nan")
+        heat_rows.append(row)
+    df = pd.DataFrame(heat_rows, columns=list(ordered_lemma_names), index=index)
+    df = df.apply(lambda x: np.log2(x))
+    
+    # fig = plt.figure(figsize=(25, 5))
+    # ax = fig.gca()
+    # sns.heatmap(df, ax=ax, linewidths=1, cmap="Oranges", mask=df.isnull(), cbar_kws=dict(orientation='vertical', pad=0.01))
+    # plt.yticks(rotation=0)
+    # plt.tight_layout()
+    # ax.collections[0].cmap.set_bad('0.98')
+    # plt.savefig(osp.join("figures", "named_lemma_applied_count_heatmap.pdf"), dpi=600, bbox_inches="tight")
 
     # Save a un-named version
     # fmt: off
@@ -407,8 +427,6 @@ def plot_heatmap():
             return f"{i}\nv"
         elif name.startswith("hlo"):
             return f"{i}\nh"
-        elif name.startswith("internal") or name.startswith("rms"):
-            return f"{i}\ni"
         elif name in clean_lemmas:
             return f"{i}\nc"
         else:
