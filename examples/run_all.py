@@ -70,7 +70,7 @@ parser.add_argument(
     "--dry_run",
     action="store_true",
 )
-parser.add_argument("--disable_rich", action="store_true", help="Disable rich printing.")
+parser.add_argument("--enable_rich", action="store_true", help="Disable rich printing.")
 parser.add_argument("--verbose", action="store_true", help="Enable verbose output.")
 args = parser.parse_args()
 
@@ -107,7 +107,7 @@ def main():
     model = args.task
 
     tg_args = ""
-    if args.disable_rich:
+    if not args.enable_rich:
         tg_args += " --disable_rich"
 
     if args.task in ("aws_llama", "gpt", "qwen2"):
