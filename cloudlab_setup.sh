@@ -1,5 +1,7 @@
 #!/bin/bash
 
+trap 'trap - ERR; return' ERR
+
 # Install required fonts
 echo "Install required fonts..."
 sudo apt update
@@ -8,6 +10,7 @@ sudo apt-get install -y ttf-mscorefonts-installer
 rm ~/.cache/matplotlib -rf
 
 # Install `uv`, a Python package manager.
+sleep 1  # Take a short rest.
 echo "---------------------------------------------------------------------"
 echo "Installing uv..."
 curl -LsSf https://astral.sh/uv/install.sh | sh

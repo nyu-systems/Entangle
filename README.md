@@ -38,7 +38,7 @@ This also serves as the artifact for ASPLOS's Artifact Evaluation, targetting Av
 
 ## Setup
 
-### Option 1: CloudLab Setup
+### Option 1 (Recommended): CloudLab Setup
 
 If you are using CloudLab, we provide a CloudLab profile and a single script to automatically set up the environment.
 
@@ -104,7 +104,7 @@ Please refer to the [examples/README.md](examples/README.md) for instructions on
 
 Thank you for your reviews.
 
-This artifact is our implementation of the inductive relation refinement method described in the paper. We also provides input computation graphs for the open-source frameworks, but unfortunately, we cannot publish the graphs of the company's proprietary models. 
+This artifact is our implementation of the inductive relation refinement method described in the paper. We also provides input computation graphs for all the open-source models/frameworks we used. But unfortunately, we cannot publish the graphs of the company's proprietary models. 
 
 With this repository, the performance results for verification graphs from open-source frameworks can be reproduced, including
 
@@ -112,8 +112,6 @@ With this repository, the performance results for verification graphs from open-
 - (Figure 4) Scalability on verifying parallelized models.
 - (Figure 5) Lemmas complexity statistics (which requires manual counting and the results are put in the [visualization script](./examples/visualization.py)).
 - (Figure 6) Heatmap showing the number of times each lemmas is used for different models.
-
-This repository does NOT contain codes to draw Figure 5 since it relies human efforts to manually count the lines of codes (LOC).
 
 We first introduce the [Code Structure](#code-structure), then provide [Evaluation Instructions](#evaluation-instructions) to reproduce open-source part results in the paper.
 
@@ -150,20 +148,20 @@ examples    # examples, see examples/README.md
 
 ### Evaluation Instructions
 
-#### 1. Setup
+#### Step 1. Setup
 
 Setup your environment following instructions in previous [Setup](#setup).
 
-#### 2. Run all experiments
+#### Step 2. Run all experiments
 
 The example input compution graphs are in [examples/data](./examples/data/). Run the commands below to run the refinement inference and verification.
 
-##### 2.1 Model Verification
+##### Step 2.1 Model Verification
 
 These three commands run all verification task for each model sequentially. All the verified graphs are bug-free.
 
 ```sh
-# Assuming you are in `examples`
+# Assume you are in directory `examples`
 # gpt starts 16 runs sequentially (TP degrees are 2, 4, 6, 8, and numbers of layers are 1, 2, 4, 8)
 python run_all.py gpt --all
 # qwen2 starts 2 runs sequentially (TP degrees are 2, 4, and number of layers is 1)
@@ -180,7 +178,7 @@ If you see `Refinement verification succeeded for ...` messages after each run, 
 - `$OUTPUT/index.html`: visualization for the graphs
 - `$OUTPUT/output.log`: overall log for the whole verification
 
-##### 2.2 Bug Detection
+##### Step 2.2 Bug Detection
 
 The 4 commands run the verification for all the 4 pairs of graphs **with bugs** introduced in the paper. 
 
@@ -190,6 +188,7 @@ The verification is **expected to raise errors**. If you get any of the errors b
 - entangle.tools.egg.FailedImplyingEquivalence: <span style="color: red">User expectation violated.</span>
 
 ```sh
+# Assume you are in directory `examples`
 python ./run_all.py grad_accumulation  # (Bug 6 in paper)
 python ./run_all.py missing_allreduce_under_wrong_config  # (Bug 7 in paper)
 python ./run_all.py missing_switchmlp_allreduce  # (Bug 8 in paper)
@@ -197,7 +196,7 @@ python ./run_all.py missing_layernorm_allreduce  # (Bug 9 in paper)
 ```
 
 
-#### 3. Visualization
+#### Step 3. Visualization
 
 To easily compare with results in the paper, run the visualization script to generate figures after step 2 ([Model Verification Part](#21-model-verification)).
 
@@ -233,7 +232,7 @@ We wrapped TorchDynamo to generate computation graphs in the format of `Pickleab
 An example can be found in [capture_example.py](./examples/capture_example.py). Simply run the command below to run this example:
 
 ```sh
-# In `examples` directory
+# Assume you are in directory `examples`
 python capture_example.py
 ```
 
