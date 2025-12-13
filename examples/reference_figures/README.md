@@ -2,8 +2,9 @@
 
 This directory contains reference figures for the examples in this repository.
 
-Note that they are results ran with hardware and software as described below, which is different from the one we used in the paper:
+Note that they are results ran with hardware and software as described in the paper:
 
-- Intel(R) Core(TM) Ultra 9 275HX
-- 48GB Memory
-- WSL2 on Windows 11
+- CloudLab `c6525-25g` node
+    - A 16-core AMD EPYC 7302P CPU running at 3GHz
+    - 128GB Memory
+- Ubuntu 22.04

@@ -372,7 +372,8 @@ def plot_heatmap():
     seen_lemma_names = set()
     lemma_names = []
     for run_name, lemma_applied_count in lemma_applied_count_list:
-        names = [name for name in lemma_applied_count.keys() if name not in seen_lemma_names]
+        sorted_lemma_applied_count = sorted(lemma_applied_count.items(), key=lambda item: item[1], reverse=True)
+        names = [name for name, count in sorted_lemma_applied_count if name not in seen_lemma_names]
         common_names = []
         hlo_names = []
         vllm_names = []
@@ -428,7 +429,7 @@ def plot_heatmap():
     ax.collections[0].cmap.set_bad("0.98")
     plt.savefig(osp.join("figures", "lemma_applied_count_heatmap.pdf"), dpi=600, bbox_inches="tight")
 
-    print(" Lemma Applied Count Figure (Figure 4) generated to figures/lemma_applied_count_heatmap.pdf")
+    print(" Lemma Applied Count Figure generated to figures/lemma_applied_count_heatmap.pdf")
 
 
 def plot_lemma_complexity():
@@ -500,6 +501,8 @@ def plot_lemma_complexity():
     plt.tight_layout()
     plt.savefig("figures/lemma_loc.pdf", bbox_inches="tight", dpi=600)
 
+    print(" CDF of Lemma LOC generated to figures/lemma_loc.pdf")
+
     # 2. Plot statistics numbers
     ys = ["#of New Operators", "#of New Lemmas", "Avg. #of Operators in a Lemma"]
     cmap_dict = {k / 2: v for k, v in enumerate(COLORS)}
@@ -513,6 +516,8 @@ def plot_lemma_complexity():
     plt.tight_layout()
     plt.legend(ncol=1, labelspacing=0.05, fontsize=10)
     plt.savefig("figures/number_of_ops_and_lemmas.pdf", bbox_inches="tight", dpi=600)
+
+    print(" Lemmas Statistics generated to figures/number_of_ops_and_lemmas.pdf")
 
 
 
