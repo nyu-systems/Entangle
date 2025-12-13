@@ -1,5 +1,8 @@
 # Copyright (c) 2025 ByteDance Ltd. and/or its affiliates
 #
+# Modifications Copyright (c) 2025 [Zhanghan Wang]
+# Note: Support better logging.
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -36,26 +39,19 @@ from entangle.sgraph.sgraph import SGraph
 from entangle.tools.egg import EggRunner
 from entangle.tools.utils import dot_exists
 from entangle.utils import visual_utils
-from entangle.utils.print_utils import BGREEN, BRED, BRI, BYELLOW, RST
+from entangle.utils.print_utils import BGREEN, BRED, BRI, BYELLOW, RST, init_global_logger, get_global_logger
 
 random.seed(123456)
 np.random.seed(123456)
 
 
-parser = argparse.ArgumentParser(
-    description="entangle: a tool for graph dumping and verification of PyTorch models."
-)
-parser.add_argument(
-    "--disable_rich", "--poor", action="store_true", help="Disable rich printing."
-)
-parser.add_argument("--log", help="Logging level", type=str, default="INFO")
-parser.add_argument(
-    "--log_path", help="Logging path.", type=str, default=osp.join(tempfile.gettempdir(), "entangle.log")
-)
+parser = argparse.ArgumentParser(description="entangle: a tool for graph dumping and verification of PyTorch models.")
+parser.add_argument("--disable_rich", "--poor", action="store_true", help="Disable rich printing.")
+parser.add_argument("--console_level", help="Logging level", type=str, default="ERROR")
+parser.add_argument("--file_level", help="Logging level", type=str, default="INFO")
+parser.add_argument("--log_path", help="Logging path.", type=str, default=osp.join(tempfile.gettempdir(), "entangle.log"))
 
-subparsers = parser.add_subparsers(
-    help="Sub-commands for entangle", dest="subcommand"
-)
+subparsers = parser.add_subparsers(help="Sub-commands for entangle", dest="subcommand")
 
 ###################################################################################################
 # subparser for `test`
@@ -73,49 +69,37 @@ parser_test.add_argument(
     type=str,
     default="dynamo",
 )
-parser_test.add_argument(
-    "-o", "--output", help=f"Output dirname", type=str, default=tempfile.gettempdir()
-)
+parser_test.add_argument("-o", "--output", help=f"Output dirname", type=str, default=tempfile.gettempdir())
 parser_test.add_argument("-d", "--draw", help=f"Draw graph", action="store_true")
 parser_test.add_argument("--dynamo_log", help=f"Dynamo logs", action="store_true")
-parser_test.add_argument(
-    "--dsp_size", help=f"Distributed sequence parallelism Size", type=int
-)
+parser_test.add_argument("--dsp_size", help=f"Distributed sequence parallelism Size", type=int)
 parser_test.add_argument("--tp_size", help=f"Tensor parallelism size", type=int)
 
 ###################################################################################################
 # subparser for `texify`
 ###################################################################################################
 parser_textify = subparsers.add_parser("textify", help="Texify a gpickle file(s)")
-parser_textify.add_argument(
-    "input_path", help=f"Input file name or directory path", type=str
-)
+parser_textify.add_argument("input_path", help=f"Input file name or directory path", type=str)
 parser_textify.add_argument("-o", "--output", help=f"Output dirname", type=str)
 
 ###################################################################################################
 # subparser for `picklize`
 ###################################################################################################
 parser_picklize = subparsers.add_parser("picklize", help="Generate gpickle from text.")
-parser_picklize.add_argument(
-    "input_path", help=f"Input file name or directory path", type=str
-)
+parser_picklize.add_argument("input_path", help=f"Input file name or directory path", type=str)
 parser_picklize.add_argument("-o", "--output", help=f"Output dirname", type=str)
 
 ###################################################################################################
 # subparser for `visualize`
 ###################################################################################################
 parser_textify = subparsers.add_parser("visualize", help="Visualize a gpickle file(s)")
-parser_textify.add_argument(
-    "input_path", help=f"Input file name or directory path", type=str
-)
+parser_textify.add_argument("input_path", help=f"Input file name or directory path", type=str)
 parser_textify.add_argument("-o", "--output", help=f"Output dirname", type=str)
 
 ###################################################################################################
 # subparser for `infer`
 ###################################################################################################
-parser_infer = subparsers.add_parser(
-    "infer", help="Infer post-conditions using e-graph."
-)
+parser_infer = subparsers.add_parser("infer", help="Infer post-conditions using e-graph.")
 parser_infer.add_argument(
     "--cache",
     action="store_true",
@@ -206,9 +190,7 @@ parser_infer.add_argument(
 ####################
 # SSkeleton only
 ####################
-parser_infer.add_argument(
-    "--begin", help=f"Begin from which sgroup.", default=0, type=int
-)
+parser_infer.add_argument("--begin", help=f"Begin from which sgroup.", default=0, type=int)
 parser_infer.add_argument(
     "--end",
     help=f"Stop at which sgroup id (excluding this group).",
@@ -241,9 +223,7 @@ parser_infer.add_argument(
     help="Enable saving a group (sub-graphs) for ease of debug.",
     action="store_true",
 )
-parser_infer.add_argument(
-    "--inverse_lemma", help="Use inverse lemmas.", action="store_true"
-)
+parser_infer.add_argument("--inverse_lemma", help="Use inverse lemmas.", action="store_true")
 parser_infer.add_argument("--debug", help="Use debug version Egg.", action="store_true")
 parser_infer.add_argument("--tmux", help="Use tmux.", action="store_true")
 parser_infer.add_argument("--verbose", help="Verbose.", action="store_true")
@@ -281,9 +261,7 @@ def test(args: argparse.Namespace):
         res = identity_or_get_first(model(*input_args, **input_kwargs)).mean()
         res.backward()
     elif args.method == "jit.trace":
-        entangle.graph.trace.trace_and_dump(
-            model, input_args, dirname=args.output, rank=rank
-        )
+        entangle.graph.trace.trace_and_dump(model, input_args, dirname=args.output, rank=rank)
     elif args.method == "dynamo":
         import logging
 
@@ -291,12 +269,8 @@ def test(args: argparse.Namespace):
         import torch._dynamo as torchdynamo
 
         if rank == 0 and args.dynamo_log:
-            torch._logging.set_logs(
-                dynamo=logging.DEBUG, aot=logging.DEBUG, graph_code=True
-            )
-        collector = GraphCollector(
-            formats=["code"], distributed=rank is not None, rank=rank, draw=False
-        )
+            torch._logging.set_logs(dynamo=logging.DEBUG, aot=logging.DEBUG, graph_code=True)
+        collector = GraphCollector(formats=["code"], distributed=rank is not None, rank=rank, draw=False)
         # @torchdynamo.optimize(backend=collector.make_backend(GraphCollector.Direction.FW))
         # @torchdynamo.optimize("eager", dynamic=False)
         # def fn(model):
@@ -317,16 +291,14 @@ def test(args: argparse.Namespace):
             res = identity_or_get_first(model(*input_args, **input_kwargs)).mean()
             res.backward()
 
-        collector, compiled_model, default_backend_model = (
-            entangle.graph.dynamo.dynamo_and_dump(
-                model,
-                fn,
-                dirname=args.output,
-                formats=["code"],
-                logs=args.dynamo_log,
-                rank=rank,
-                draw=args.draw,
-            )
+        collector, compiled_model, default_backend_model = entangle.graph.dynamo.dynamo_and_dump(
+            model,
+            fn,
+            dirname=args.output,
+            formats=["code"],
+            logs=args.dynamo_log,
+            rank=rank,
+            draw=args.draw,
         )
         if rank == 0:
             for g in collector.pickleable_graphs():
@@ -335,19 +307,13 @@ def test(args: argparse.Namespace):
 
         # Test compiled.
         result = identity_or_get_first(model(*input_args, **input_kwargs))
-        compiled_result = identity_or_get_first(
-            default_backend_model(*input_args, **input_kwargs)
-        )
+        compiled_result = identity_or_get_first(default_backend_model(*input_args, **input_kwargs))
         if not torch.allclose(result, compiled_result, rtol=0.0, atol=0.0):
-            print(
-                f"Error: results not close.\n{result=}\n{compiled_result=}", flush=True
-            )
+            print(f"Error: results not close.\n{result=}\n{compiled_result=}", flush=True)
         else:
             print(f"[rank {rank}] Results are close", flush=True)
     else:
-        raise NotImplementedError(
-            f"Unknown mode: {args.method}, only supports jit.trace|dynamo"
-        )
+        raise NotImplementedError(f"Unknown mode: {args.method}, only supports jit.trace|dynamo")
     if is_dist:
         dist.destroy_process_group()
     print(f"[rank={rank}] Exiting normally.")
@@ -377,19 +343,13 @@ def textify(args: argparse.Namespace):
                 if not filename.endswith(".gpickle"):
                     continue
                 input_path = osp.join(dirpath, filename)
-                output_path = osp.join(
-                    output_dir, osp.relpath(input_path, start=input_dir)
-                )
+                output_path = osp.join(output_dir, osp.relpath(input_path, start=input_dir))
                 output_path = output_path.removesuffix(".gpickle") + ".log"
                 textify_file(input_path, output_path)
     else:
-        output_dir = (
-            args.output if args.output is not None else osp.dirname(args.input_path)
-        )
+        output_dir = args.output if args.output is not None else osp.dirname(args.input_path)
         rich.print(f"Outputing to {output_dir}")
-        output_path = osp.join(
-            output_dir, osp.basename(args.input_path.removesuffix(".gpickle") + ".log")
-        )
+        output_path = osp.join(output_dir, osp.basename(args.input_path.removesuffix(".gpickle") + ".log"))
         textify_file(args.input_path, output_path)
 
 
@@ -418,19 +378,13 @@ def picklize(args: argparse.Namespace):
                 if not filename.endswith(".log"):
                     continue
                 input_path = osp.join(dirpath, filename)
-                output_path = osp.join(
-                    output_dir, osp.relpath(input_path, start=input_dir)
-                )
+                output_path = osp.join(output_dir, osp.relpath(input_path, start=input_dir))
                 output_path = output_path.removesuffix(".log") + ".gpickle"
                 picklize_file(input_path, output_path)
     else:
-        output_dir = (
-            args.output if args.output is not None else osp.dirname(args.input_path)
-        )
+        output_dir = args.output if args.output is not None else osp.dirname(args.input_path)
         rich.print(f"Outputing to {output_dir}")
-        output_path = osp.join(
-            output_dir, osp.basename(args.input_path.removesuffix(".log") + ".gpickle")
-        )
+        output_path = osp.join(output_dir, osp.basename(args.input_path.removesuffix(".log") + ".gpickle"))
         picklize_file(args.input_path, output_path)
 
 
@@ -462,19 +416,13 @@ def visualize(args: argparse.Namespace):
                 if not filename.endswith(".gpickle"):
                     continue
                 input_path = osp.join(dirpath, filename)
-                output_path = osp.join(
-                    output_dir, osp.relpath(input_path, start=input_dir)
-                )
+                output_path = osp.join(output_dir, osp.relpath(input_path, start=input_dir))
                 output_path = output_path.removesuffix(".gpickle")
                 visualize_file(input_path, output_path)
     else:
-        output_dir = (
-            args.output if args.output is not None else osp.dirname(args.input_path)
-        )
+        output_dir = args.output if args.output is not None else osp.dirname(args.input_path)
         rich.print(f"Outputing to {output_dir}")
-        output_path = osp.join(
-            output_dir, osp.basename(args.input_path.removesuffix(".gpickle"))
-        )
+        output_path = osp.join(output_dir, osp.basename(args.input_path.removesuffix(".gpickle")))
         visualize_file(args.input_path, output_path)
 
 
@@ -487,7 +435,7 @@ def build_egg_runner(args: argparse.Namespace) -> EggRunner:
         egg_data_dirname=args.egg_data_dirname,
         inverse_lemma=args.inverse_lemma,
         post_type=args.post_type,
-        log_level=args.log,
+        log_level=args.file_level,
         debug=args.debug,
         tmux=args.tmux,
         verbose=args.verbose,
@@ -545,6 +493,8 @@ def infer(args: argparse.Namespace, unknown_args: Sequence[str]):
 
     os.system("pkill dot")
 
+    LOGGER = get_global_logger()
+
     # Load the module, so that ops and mapping defined outside can be used.
     config_module = load_module(args.config_module, "config_module")
     ConfigClass: Type[Config] = load_config_class(config_module)
@@ -560,9 +510,7 @@ def infer(args: argparse.Namespace, unknown_args: Sequence[str]):
         # 1. Load the computational graphs from; or load SubInferInfo
         if osp.isfile(args.graph_path):
             sub_infer_info = SubInferInfo.load(args.graph_path)
-            assert (
-                type(sub_infer_info) == SubInferInfo
-            ), f"Expect SubInferInfo, got {sub_infer_info}"
+            assert type(sub_infer_info) == SubInferInfo, f"Expect SubInferInfo, got {sub_infer_info}"
             if args.infer_manager == "explorative":
                 raise RuntimeError(
                     f"Cannot use ExplorativeInferManager (--infer_manager explorative) with SubInferInfo. "
@@ -578,12 +526,9 @@ def infer(args: argparse.Namespace, unknown_args: Sequence[str]):
             origin_filename = [
                 f
                 for f in os.listdir(origin_dirname)
-                if f.startswith(graph_prefix)
-                and (f.endswith(".gpickle") or f.endswith(".sgraph"))
+                if f.startswith(graph_prefix) and (f.endswith(".gpickle") or f.endswith(".sgraph"))
             ]
-            assert (
-                len(origin_filename) == 1
-            ), f"Expect exactly one origin, got {origin_filename}"
+            assert len(origin_filename) == 1, f"Expect exactly one origin, got {origin_filename}"
             origin_sgraph = load_sgraph(
                 osp.join(origin_dirname, origin_filename[0]),
                 name_prefix="S",
@@ -596,8 +541,7 @@ def infer(args: argparse.Namespace, unknown_args: Sequence[str]):
                 [
                     f
                     for f in os.listdir(target_dirname)
-                    if f.startswith(graph_prefix)
-                    and (f.endswith(".gpickle") or f.endswith(".sgraph"))
+                    if f.startswith(graph_prefix) and (f.endswith(".gpickle") or f.endswith(".sgraph"))
                 ]
             )
             target_sgraphs = [
@@ -626,15 +570,10 @@ def infer(args: argparse.Namespace, unknown_args: Sequence[str]):
                     for sexpr in output.post_order_dfs():
                         if sexpr.name == focus_name:
                             return SGraph([sexpr], sgraph.sexpr_order)
-                raise RuntimeError(
-                    f"Cannot find the focus node {focus_name} in the graph."
-                )
+                raise RuntimeError(f"Cannot find the focus node {focus_name} in the graph.")
 
             origin_sgraph = focus(origin_sgraph, args.focus[0])
-            target_sgraphs = [
-                focus(sg, focus_name)
-                for sg, focus_name in zip(target_sgraphs, args.focus[1:])
-            ]
+            target_sgraphs = [focus(sg, focus_name) for sg, focus_name in zip(target_sgraphs, args.focus[1:])]
 
         # 2.2. Simplify graph by removing clones and duplicated dist/wait.
         def simplify(sgraph: SGraph):
@@ -652,11 +591,7 @@ def infer(args: argparse.Namespace, unknown_args: Sequence[str]):
 
         # 2.3. Force leaf
         def force_leaf(sgraph: SGraph):
-            return (
-                SGraphTransformer(sgraph)
-                .force_leaf(config.get_force_leaf_set())
-                .to_sgraph()
-            )
+            return SGraphTransformer(sgraph).force_leaf(config.get_force_leaf_set()).to_sgraph()
 
         origin_sgraph = force_leaf(origin_sgraph)
         target_sgraphs = [force_leaf(sg) for sg in target_sgraphs]
@@ -666,9 +601,7 @@ def infer(args: argparse.Namespace, unknown_args: Sequence[str]):
         SGraphTransformer(sgraphs=target_sgraphs).merge_dist_ops(just_mark=True)
 
         # 2.5. Visualize the sgraphs
-        visualize_sgraph_to_infer(
-            origin_sgraph, target_sgraphs, args.output, graph_prefix=graph_prefix
-        )
+        visualize_sgraph_to_infer(origin_sgraph, target_sgraphs, args.output, graph_prefix=graph_prefix)
 
         # 2.6. Save the sgraphs
         shutil.rmtree(cache_dirname, ignore_errors=True)
@@ -679,17 +612,14 @@ def infer(args: argparse.Namespace, unknown_args: Sequence[str]):
             with open(osp.join(cache_dirname, f"target{i}.sgraph"), "wb") as f:
                 pickle.dump(sgraph, f)
         tg.save_global_states(osp.join(cache_dirname, "global_states.pkl"))
-        print(f"{BGREEN}Saved sgraphs to {cache_dirname}{RST}")
+        LOGGER.print(f"{BGREEN}Saved sgraphs to {cache_dirname}{RST}")
     else:
-        print(f"{BGREEN}Loading sgraphs from {cache_dirname}{RST}")
+        LOGGER.print(f"{BGREEN}Loading sgraphs from {cache_dirname}{RST}")
         origin_path = osp.join(cache_dirname, "origin.sgraph")
         origin_sgraph = pickle.load(open(origin_path, "rb"))
-        target_filenames = [
-            f for f in os.listdir(cache_dirname) if re.match(r"target\d+.sgraph", f)
-        ]
+        target_filenames = [f for f in os.listdir(cache_dirname) if re.match(r"target\d+.sgraph", f)]
         target_sgraphs = [
-            pickle.load(open(osp.join(cache_dirname, target_filename), "rb"))
-            for target_filename in target_filenames
+            pickle.load(open(osp.join(cache_dirname, target_filename), "rb")) for target_filename in target_filenames
         ]
         if args.output is None:
             args.output = run_name
@@ -709,7 +639,7 @@ def infer(args: argparse.Namespace, unknown_args: Sequence[str]):
         stats.append(sgraph.get_stats().to_dict())
     with open(path, "w") as f:
         json.dump(stats, f, indent=4)
-    print(f"{BGREEN}Graph Stats dumped into {path}{RST}")
+    LOGGER.print(f"{BGREEN}Graph Stats dumped into {path}{RST}")
     ################### pre-processing done ###################
 
     ################# start running inference #################
@@ -732,10 +662,8 @@ def infer(args: argparse.Namespace, unknown_args: Sequence[str]):
         )
 
     if args.infer_manager == "sskeleton":
-        print(f"{BRI}Using InferManager: SSkeletonInferManager{RST}")
-        assert not issubclass(
-            ConfigClass, ExplorativeConfig
-        ), f"Cannot use ExplorativeConfig for SSkeletonInferManager."
+        LOGGER.print(f"{BRI}Using InferManager: SSkeletonInferManager{RST}")
+        assert not issubclass(ConfigClass, ExplorativeConfig), f"Cannot use ExplorativeConfig for SSkeletonInferManager."
 
         # 6. Create `InferManager` to infer post conditions.
         infer_manager = SSkeletonInferManager(
@@ -745,9 +673,7 @@ def infer(args: argparse.Namespace, unknown_args: Sequence[str]):
             egg_runner,
             save_group=args.save_group,
         )
-        input_sexpr_econdition_list: list[SExprECondition] = (
-            config.build_preconditions()
-        )
+        input_sexpr_econdition_list: list[SExprECondition] = config.build_preconditions()
         for sexpr_econdition in input_sexpr_econdition_list:
             econdition = ECondition.from_sexpr_econdition(sexpr_econdition)
             infer_manager.add_econdition(econdition, check_self_provable=False)
@@ -770,12 +696,11 @@ def infer(args: argparse.Namespace, unknown_args: Sequence[str]):
             )
         finally:
             elapsed = datetime.now() - begin_infer
-            print(f"{BRI}Time Elapased for Inference: {elapsed}{RST}\n")
+            LOGGER.print(f"{BRI}Time Elapased for Inference: {elapsed}{RST}\n")
     elif args.infer_manager == "explorative":
         if not isinstance(config, ExplorativeConfig):
             raise RuntimeError(
-                f"Must use ExplorativeConfig for explorative mode, "
-                f"got {type(config)}, please check {args.config_module}"
+                f"Must use ExplorativeConfig for explorative mode, " f"got {type(config)}, please check {args.config_module}"
             )
         way = set.intersection if args.way == "intersection" else set.union
 
@@ -795,9 +720,7 @@ def infer(args: argparse.Namespace, unknown_args: Sequence[str]):
                 resume_infer_manager: ExplorativeInferManager = pickle.load(f)
             infer_manager.resume(resume_infer_manager)
         else:
-            input_sexpr_econdition_list: list[SExprECondition] = (
-                config.build_preconditions()
-            )
+            input_sexpr_econdition_list: list[SExprECondition] = config.build_preconditions()
             for sexpr_econdition in input_sexpr_econdition_list:
                 econdition = ECondition.from_sexpr_econdition(sexpr_econdition)
                 infer_manager.add_econdition(econdition, check_self_provable=False)
@@ -816,13 +739,12 @@ def infer(args: argparse.Namespace, unknown_args: Sequence[str]):
             )
         finally:
             elapsed = datetime.now() - begin_infer
-            print(f"{BRI}Time Elapased for Inference: {elapsed}{RST}\n")
+            LOGGER.print(f"{BRI}Time Elapased for Inference: {elapsed}{RST}\n")
     else:
         assert args.infer_manager == "greedy"
         if not isinstance(config, ExplorativeConfig):
             raise RuntimeError(
-                f"Must use ExplorativeConfig for explorative mode, "
-                f"got {type(config)}, please check {args.config_module}"
+                f"Must use ExplorativeConfig for explorative mode, " f"got {type(config)}, please check {args.config_module}"
             )
         way = set.intersection if args.way == "intersection" else set.union
 
@@ -842,11 +764,9 @@ def infer(args: argparse.Namespace, unknown_args: Sequence[str]):
                 resume_infer_manager: GreedyExplorativeInferManager = pickle.load(f)
             infer_manager.resume(resume_infer_manager)
         else:
-            print(f"{BGREEN}Building Preconditions...{RST}")
-            input_sexpr_econdition_list: list[SExprECondition] = (
-                config.build_preconditions()
-            )
-            print(f"{BGREEN}Loading preconditions...{RST}")
+            LOGGER.print(f"{BGREEN}Building Preconditions...{RST}")
+            input_sexpr_econdition_list: list[SExprECondition] = config.build_preconditions()
+            LOGGER.print(f"{BGREEN}Loading preconditions...{RST}")
             for sexpr_econdition in tqdm(input_sexpr_econdition_list, leave=False):
                 econdition = ECondition.from_sexpr_econdition(sexpr_econdition)
                 infer_manager.add_econdition(econdition, check_self_provable=False)
@@ -865,27 +785,45 @@ def infer(args: argparse.Namespace, unknown_args: Sequence[str]):
             )
         finally:
             elapsed = datetime.now() - begin_infer
-            print(f"{BRI}Time Elapased for Inference: {elapsed}{RST}\n")
+            LOGGER.print(f"{BRI}Time Elapased for Inference: {elapsed}{RST}\n")
 
     # 8. Check final post condition if available.
     expected_list = config.build_expected()
     if len(expected_list) == 0:
-        print(
-            f"{BYELLOW}Warning: No user expectation provided. Just inferred post-conditions.{RST}"
-        )
+        LOGGER.print(f"{BYELLOW}Warning: No user expectation provided. Just inferred post-conditions.{RST}")
     infer_manager.check_impl(args.output, expected_list)
 
     now = datetime.now()
-    print(f"Exiting normally. \nEverything done in {now - begin}.")
+    LOGGER.print(f"Exiting normally. OUTPUT: {args.output}")
+    LOGGER.print(f"Everything done in {now - begin}.")
 
 
 def main():
     args, unknown_args = parser.parse_known_args()
 
-    args.log = logging._nameToLevel[args.log.upper()]
+    args.console_level = logging._nameToLevel[args.console_level.upper()]
+    args.file_level = logging._nameToLevel[args.file_level.upper()]
+    if args.file_level > logging.INFO:
+        raise ValueError("File log level cannot be higher than INFO, because we need the log to analyze the results")
+    print("Using console log level:", args.console_level)
+    print("Using file log level:", args.file_level)
+
     if args.disable_rich:
         rich_print_backup = rich.print
         rich.print = print
+        rich.pretty.pretty_repr = lambda x: x
+
+    if args.output is not None:
+        os.makedirs(args.output, exist_ok=True)
+        init_global_logger(
+            args.console_level,
+            args.file_level,
+            mode="w",
+            path=osp.join(args.output, "output.log"),
+            enable_rich=not args.disable_rich,
+        )
+    else:
+        init_global_logger(args.console_level, args.file_level, enable_rich=not args.disable_rich)
 
     if args.subcommand == "test":
         test(args)
@@ -898,12 +836,8 @@ def main():
     elif args.subcommand == "infer":
         args.graph_path = osp.normpath(args.graph_path)
         if args.visualize:
-            assert (
-                dot_exists()
-            ), "Please install graphviz and make sure `dot` is in your PATH to use `visualize`"
-        assert (
-            args.end == -1 or args.begin <= args.end
-        ), f"Invalid range: {args.begin=}, {args.end=}"
+            assert dot_exists(), "Please install graphviz and make sure `dot` is in your PATH to use `visualize`"
+        assert args.end == -1 or args.begin <= args.end, f"Invalid range: {args.begin=}, {args.end=}"
         infer(args, unknown_args)
         # import cProfile
         # from pstats import SortKey

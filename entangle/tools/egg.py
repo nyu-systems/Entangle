@@ -1,5 +1,8 @@
 # Copyright (c) 2025 ByteDance Ltd. and/or its affiliates
 #
+# Modifications Copyright (c) 2025 [Zhanghan Wang]
+# Note: Support better logging.
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -22,10 +25,11 @@ from datetime import datetime
 from subprocess import DEVNULL, PIPE, STDOUT, Popen
 
 import rich
-
 from entangle.sgraph.egraph import CannotFindPostconditions, EGraph
 from entangle.sgraph.sexpr import ShapeLike
-from entangle.utils.print_utils import BGREEN, BRED, BRI, RST, filling_terminal, get_logger
+from entangle.utils.print_utils import BGREEN, BRED, BRI, RST, EntangleLogger, filling_terminal, get_global_logger, get_logger
+
+LOGGER = None
 
 
 class FailedImplyingEquivalence(Exception):
@@ -58,9 +62,7 @@ class EggRunner:
     ):
         assert egg_dirname is not None, "The directory to Egg is not specified."
         self.egg_dirname = egg_dirname
-        self.egg_data_dirname = (
-            egg_data_dirname or f"{self.egg_dirname}/target/precondition"
-        )
+        self.egg_data_dirname = egg_data_dirname or f"{self.egg_dirname}/target/precondition"
         self.tmux_session_name = tmux_session_name
         self.inverse_lemma = inverse_lemma
         self.post_type = post_type
@@ -74,23 +76,26 @@ class EggRunner:
         self.visualize = visualize
         self.use_local_directory = use_local_directory
 
-        print(f"{BGREEN}Building Egg from {self.egg_dirname} ...{RST}")
+        global LOGGER
+        LOGGER = get_global_logger()
+
+        LOGGER.info(f"{BGREEN}Building Egg from {self.egg_dirname} ...{RST}")
         cmd = f"cd {self.egg_dirname} && {'cargo build' if self.debug else 'cargo build --release'}"
         p = Popen(cmd, shell=True, stdout=PIPE, stderr=STDOUT)
         p.wait()
         if p.returncode != 0:
             out, _ = p.communicate()
-            print(out.decode())
+            LOGGER.info(out.decode())
             raise RuntimeError(f"Failed to build Egg (returncode={p.returncode}).")
-        print(f"{BGREEN}Egg built.{RST}")
+        LOGGER.info(f"{BGREEN}Egg built.{RST}")
         if tmux:
-            print(f"{BGREEN}Start tmux...{RST}")
+            LOGGER.info(f"{BGREEN}Start tmux...{RST}")
             cmd = f"tmux kill-session -t {self.tmux_session_name}; tmux new-session -s {self.tmux_session_name} -n home -d"
             p = Popen(cmd, shell=True, stdout=PIPE, stderr=STDOUT)
             p.wait()
             if p.returncode != 0:
                 out, _ = p.communicate()
-                print(out.decode())
+                LOGGER.info(out.decode())
                 raise RuntimeError(f"Failed to setup tmux (returncode={p.returncode}).")
 
         self.all_scalar_econd_str: str = None
@@ -103,9 +108,9 @@ class EggRunner:
 
     def upload(self, dirname):
         if self.use_local_directory:
-            print(f"{BGREEN}No need to upload: {dirname} ...{RST}")
+            LOGGER.info(f"{BGREEN}No need to upload: {dirname} ...{RST}")
             return
-        print(f"{BGREEN}Uploading precondition and computation from {dirname}...{RST}")
+        LOGGER.info(f"{BGREEN}Uploading precondition and computation from {dirname}...{RST}")
         # Clean up precondition directory.
         cmd = f"rm -rf {self.egg_data_dirname}; mkdir -p {self.egg_data_dirname}"
         Popen(cmd, shell=True, stdout=PIPE, stderr=STDOUT).wait()
@@ -116,7 +121,7 @@ class EggRunner:
         p.wait()
         if p.returncode != 0:
             out, _ = p.communicate()
-            print(out.decode())
+            LOGGER.info(out.decode())
             raise RuntimeError(f"Failed to upload (returncode={p.returncode}).")
 
     @staticmethod
@@ -146,9 +151,7 @@ class EggRunner:
         os.makedirs(egg_data_dirname, exist_ok=True)
 
         if mode == "infer":
-            logger = get_logger(
-                output_log_path, self.log_level, mode="a", path=output_log_path
-            )
+            logger = get_logger(output_log_path, self.log_level, mode="a", path=output_log_path)
             self.infer_post_condition(
                 egg_data_dirname,
                 output_log_path=output_log_path,
@@ -189,14 +192,12 @@ class EggRunner:
             if only_log:
                 cmd = f"cd {self.egg_dirname} && {core_cmd} 2>&1 | tee {output_log_path} > /dev/null"
             else:
-                cmd = (
-                    f"cd {self.egg_dirname} && {core_cmd} 2>&1 | tee {output_log_path}"
-                )
+                cmd = f"cd {self.egg_dirname} && {core_cmd} 2>&1 | tee {output_log_path}"
             # Check
             cmd += f" ; cat {output_log_path} | grep '{grep_success_str}'"
             p = Popen(cmd, shell=True, stdout=DEVNULL, stderr=DEVNULL)
             if not silent:
-                print(f"{BGREEN}Running Egg to {mode}...{RST}")
+                LOGGER.info(f"{BGREEN}Running Egg to {mode}...{RST}")
         else:
             core_cmd = core_cmd.strip(" ") + f" 2>&1 | tee {output_log_path} "
             tmux_session_window_name = f"{self.tmux_session_name}:{tmux_window_id}"
@@ -213,7 +214,7 @@ class EggRunner:
             )
             p = Popen(cmd, shell=True, stdout=PIPE, stderr=STDOUT)
             if not silent:
-                print(
+                LOGGER.info(
                     f"{BGREEN}Running Egg to {mode}...{RST} "
                     f"(Use tmux window {BRI}{tmux_session_window_name}{RST} to see what happened.)"
                 )
@@ -222,17 +223,17 @@ class EggRunner:
         if p.returncode != 0:
             out, _ = p.communicate()
             if out is not None:
-                print(filling_terminal("server output"))
+                LOGGER.info(filling_terminal("server output"))
                 out = out.decode()
                 if out.endswith("\n\n"):
                     out = out[:-1]
-                print(out)
-                print("\n" + filling_terminal())
+                LOGGER.info(out)
+                LOGGER.info("\n" + filling_terminal())
             if self.tmux and mode != "pass":
-                print(filling_terminal("tmux buffer output"))
+                LOGGER.info(filling_terminal("tmux buffer output"))
                 cmd = f"cat {output_log_path}"
                 Popen(cmd, shell=True).wait()
-                print("\n" + filling_terminal())
+                LOGGER.info("\n" + filling_terminal())
             self.download(dirname)
             if mode != "pass":
                 raise CannotFindPostconditions(
@@ -256,15 +257,11 @@ class EggRunner:
         stats=False,
         post_type=None,
         only_log=True,
-        logger: logging.Logger = None,
+        logger: EntangleLogger = None,
         **kwargs,
     ):
-        saturated_path = saturated_path or osp.join(
-            precondition_dirname, "saturated.json"
-        )
-        output_path = output_path or osp.join(
-            precondition_dirname, "postcondition.sexpr"
-        )
+        saturated_path = saturated_path or osp.join(precondition_dirname, "saturated.json")
+        output_path = output_path or osp.join(precondition_dirname, "postcondition.sexpr")
         saturation_cmd = f"cd {self.egg_dirname} && " + (
             ("./target/release/egger " if not debug else "./target/debug/egger ")
             + ("--verbose " if verbose else "")
@@ -284,7 +281,7 @@ class EggRunner:
                 saturation_cmd += f" 2>&1 | tee {output_log_path} > /dev/null"
             else:
                 saturation_cmd += f" 2>&1 | tee {output_log_path}"
-        logger.info(saturation_cmd)
+        logger.print(saturation_cmd)
         begin = datetime.now()
         saturation_process = Popen(
             saturation_cmd,
@@ -293,17 +290,13 @@ class EggRunner:
         )
         saturation_process.wait()
         returncode = saturation_process.returncode
-        logger.info(
-            f"Saturation done in {datetime.now() - begin}, returncode={returncode}"
-        )
+        logger.print(f"Saturation done in {datetime.now() - begin}, returncode={returncode}")
         if returncode == 0:
-            logger.info(f"{BRI}Saturation process succeeded.{RST}")
+            logger.print(f"{BRI}Saturation process succeeded.{RST}")
             begin = datetime.now()
-            logger.info(f"output_log_path: {output_log_path}")
+            logger.print(f"output_log_path: {output_log_path}")
             if not osp.exists(saturated_path):
-                raise RuntimeError(
-                    f"Cannot find saturated.json, please check {output_log_path}"
-                )
+                raise RuntimeError(f"Cannot find saturated.json, please check {output_log_path}")
             egraph = EGraph(saturated_path, verbose=verbose, logger=logger)
             if visualize:
                 egraph.visualize_saturated()
@@ -314,18 +307,12 @@ class EggRunner:
             candidates_egraph = None
             if visualize:
                 candidates_egraph = egraph.extract_to_postcondition(all_candidates=True)
-                candidates_egraph.to_dot(
-                    osp.join(precondition_dirname, "candidates.dot")
-                )
+                candidates_egraph.to_dot(osp.join(precondition_dirname, "candidates.dot"))
                 postcondition_egraph = egraph.extract_to_postcondition()
-                postcondition_egraph.to_dot(
-                    osp.join(precondition_dirname, "postcondition.dot")
-                )
+                postcondition_egraph.to_dot(osp.join(precondition_dirname, "postcondition.dot"))
 
             def get_representative_egraph(egraph: EGraph, visualize: bool) -> EGraph:
-                postcondition_representative_egraph = egraph.extract_to_postcondition(
-                    representative_only=True
-                )
+                postcondition_representative_egraph = egraph.extract_to_postcondition(representative_only=True)
                 if visualize:
                     file_name = "postcondition_representative.dot"
                     path = osp.join(precondition_dirname, file_name)
@@ -345,26 +332,20 @@ class EggRunner:
 
             # used_egraph = postcondition_including_yis_egraph
             if post_type is None:
-                postcondition_representative_egraph = get_representative_egraph(
-                    egraph, visualize
-                )
+                postcondition_representative_egraph = get_representative_egraph(egraph, visualize)
                 if postcondition_representative_egraph.all_yi_included():
                     used_egraph = postcondition_representative_egraph
                 else:
                     if candidates_egraph is not None:
                         used_egraph = candidates_egraph
                     else:
-                        used_egraph = egraph.extract_to_postcondition(
-                            all_candidates=True
-                        )
+                        used_egraph = egraph.extract_to_postcondition(all_candidates=True)
             else:
                 if post_type == "candidates":
                     if candidates_egraph is not None:
                         used_egraph = candidates_egraph
                     else:
-                        used_egraph = egraph.extract_to_postcondition(
-                            all_candidates=True
-                        )
+                        used_egraph = egraph.extract_to_postcondition(all_candidates=True)
                 elif post_type == "representative":
                     used_egraph = get_representative_egraph(egraph, visualize)
                 elif post_type == "yis":
@@ -377,12 +358,12 @@ class EggRunner:
                     logger.info("Post conditions:")
                     logger.info(s)
                     f.write(s)
-                    print(f"Post conditions written into {output_path}")
-            logger.info("Succeeded in finding post conditions.")
-            logger.info(f"Extraction done in {datetime.now() - begin}")
+                    LOGGER.info(f"Post conditions written into {output_path}")
+            logger.print("Succeeded in finding post conditions.")
+            logger.print(f"Extraction done in {datetime.now() - begin}")
         else:
-            logger.info("\033[1;31mError occurred in saturation process.\033[0m")
-            logger.info(saturation_process.communicate()[0].decode("utf-8"))
+            logger.error(f"{BRED}Error occurred in saturation process.{RST}")
+            logger.error(saturation_process.communicate()[0].decode("utf-8"))
             raise EggError(f"Saturation failed, please check {output_log_path}")
 
     def check_result(self, dirname: str, raise_exception=True):
@@ -410,7 +391,7 @@ class EggRunner:
 
     def download(self, dirname: str, postcondition=True) -> str:
         if self.use_local_directory:
-            print(f"{BGREEN}No need to download: {dirname} ...{RST}")
+            LOGGER.info(f"{BGREEN}No need to download: {dirname} ...{RST}")
         else:
             src_files = ["*.svg", "*.json", "*.log"]
             if postcondition:
@@ -418,16 +399,14 @@ class EggRunner:
             src_paths = [osp.join(self.egg_data_dirname, f) for f in src_files]
             cmd = " ; ".join(f"cp -r {src_path} {dirname}" for src_path in src_paths)
             p = Popen(cmd, shell=True, stdout=PIPE, stderr=STDOUT)
-            print(f"{BGREEN}Downloading postcondition to {dirname}...{RST}")
+            LOGGER.info(f"{BGREEN}Downloading postcondition to {dirname}...{RST}")
             p.wait()
             if p.returncode != 0:
                 out, _ = p.communicate()
-                print(out.decode())
+                LOGGER.info(out.decode())
                 raise RuntimeError(f"Failed to download (returncode={p.returncode}).")
         if postcondition:
-            os.system(
-                f"mv {dirname}/postcondition.sexpr {dirname}/raw_postcondition.sexpr"
-            )
+            os.system(f"mv {dirname}/postcondition.sexpr {dirname}/raw_postcondition.sexpr")
 
     def check_self_provable(self, args) -> list[int]:
         eclass_str: str = args[0]
@@ -439,9 +418,7 @@ class EggRunner:
             f.write(self.all_scalar_econd_str)
         with open(osp.join(used_dirname, "impl_checklist.sexpr"), "w") as f:
             f.write(eclass_str)
-        mapping = {
-            n: shape.to_egg_str() for n, shape in econd_name_shape_mappings.items()
-        }
+        mapping = {n: shape.to_egg_str() for n, shape in econd_name_shape_mappings.items()}
         with open(osp.join(used_dirname, "shapes.json"), "w") as f:
             json.dump(mapping, f, indent=4)
         assert self.tmux == False, "Cannot use tmux mode for self provable checking."

@@ -1,5 +1,8 @@
 # Copyright (c) 2025 ByteDance Ltd. and/or its affiliates
 #
+# Modifications Copyright (c) 2025 [Zhanghan Wang]
+# Note: Support better logging.
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -33,7 +36,7 @@ import entangle.sgraph.sexpr as tgsexpr
 from entangle.sgraph.sexpr import SExpr
 from entangle.sgraph.sgraph import SGraph
 from entangle.utils import ENODE_SPLIT
-from entangle.utils.print_utils import BYELLOW, RST, print_ft
+from entangle.utils.print_utils import BYELLOW, RST, EntangleLogger, print_ft
 
 
 class CannotFindPostconditions(Exception):
@@ -55,9 +58,7 @@ ELEMENT = (
 )
 RECURSIVE_EXPRESSION = pp.Forward()
 RECURSIVE_EXPRESSION <<= (
-    pp.Literal("(").suppress()
-    + pp.Group(pp.OneOrMore(ELEMENT ^ RECURSIVE_EXPRESSION))
-    + pp.Literal(")").suppress()
+    pp.Literal("(").suppress() + pp.Group(pp.OneOrMore(ELEMENT ^ RECURSIVE_EXPRESSION)) + pp.Literal(")").suppress()
 ) | ELEMENT
 EXPRESSION = ELEMENT ^ RECURSIVE_EXPRESSION
 
@@ -121,9 +122,7 @@ class SExprECondition:
         intermediate_sexprs: list[SExpr] = None,
     ):
         if any(s.op.scalar for s in inputs):
-            assert all(
-                s.op.scalar for s in inputs
-            ), "All inputs should be scalar if any is scalar."
+            assert all(s.op.scalar for s in inputs), "All inputs should be scalar if any is scalar."
             self.all_scalar = True
         else:
             self.all_scalar = False
@@ -134,9 +133,7 @@ class SExprECondition:
         self.intermediate_sexprs = intermediate_sexprs
 
     def __str__(self):
-        return "\n".join(
-            [ENODE_SPLIT.join(map(str, eclass)) for eclass in self.eclasses]
-        )
+        return "\n".join([ENODE_SPLIT.join(map(str, eclass)) for eclass in self.eclasses])
 
     @staticmethod
     def just_map(
@@ -146,10 +143,7 @@ class SExprECondition:
     ) -> SExpr:
         sexprs = [origin, *targets]
         if placeholder is not None:
-            sexprs = [
-                sexpr if type(sexpr) is SExpr else placeholder(sexpr)
-                for sexpr in sexprs
-            ]
+            sexprs = [sexpr if type(sexpr) is SExpr else placeholder(sexpr) for sexpr in sexprs]
         return SExprECondition(inputs=sexprs, eclasses=[])
 
     @staticmethod
@@ -160,20 +154,13 @@ class SExprECondition:
     ) -> SExpr:
         sexprs = [origin, *targets]
         if placeholder is not None:
-            sexprs = [
-                sexpr if type(sexpr) is SExpr else placeholder(sexpr)
-                for sexpr in sexprs
-            ]
+            sexprs = [sexpr if type(sexpr) is SExpr else placeholder(sexpr) for sexpr in sexprs]
         shape = sexprs[0].shape
-        assert all(
-            s.shape == shape for s in sexprs
-        ), f"Got inconsistent shapes {[(s.name, s.shape) for s in sexprs]}"
+        assert all(s.shape == shape for s in sexprs), f"Got inconsistent shapes {[(s.name, s.shape) for s in sexprs]}"
         return SExprECondition(inputs=sexprs, eclasses=[[*sexprs]])
 
     @staticmethod
-    def eq_zeros(
-        sexpr: Union[str, SExpr], placeholder: Callable[[str], SExpr] = None
-    ) -> "SExprECondition":
+    def eq_zeros(sexpr: Union[str, SExpr], placeholder: Callable[[str], SExpr] = None) -> "SExprECondition":
         if type(sexpr) is str:
             assert placeholder is not None
             sexpr = placeholder(sexpr)
@@ -192,10 +179,7 @@ class SExprECondition:
     ) -> "SExprECondition":
         if placeholder is not None:
             origin = origin if type(origin) is SExpr else placeholder(origin)
-            targets = [
-                sexpr if type(sexpr) is SExpr else placeholder(sexpr)
-                for sexpr in targets
-            ]
+            targets = [sexpr if type(sexpr) is SExpr else placeholder(sexpr) for sexpr in targets]
         result = tgsexpr.concat(targets, dim=dim)
         if label_result:
             result = result.clone_with(name=f"EXPECTED__{origin.name}")
@@ -213,10 +197,7 @@ class SExprECondition:
     ) -> "SExprECondition":
         if placeholder is not None:
             origin = origin if type(origin) is SExpr else placeholder(origin)
-            targets = [
-                sexpr if type(sexpr) is SExpr else placeholder(sexpr)
-                for sexpr in targets
-            ]
+            targets = [sexpr if type(sexpr) is SExpr else placeholder(sexpr) for sexpr in targets]
         result = tgsexpr.sum(targets)
         if label_result:
             result = result.clone_with(name=f"EXPECTED__{origin.name}")
@@ -242,10 +223,7 @@ class SExprECondition:
         """
         if placeholder is not None:
             origin = origin if type(origin) is SExpr else placeholder(origin)
-            targets = [
-                sexpr if type(sexpr) is SExpr else placeholder(sexpr)
-                for sexpr in targets
-            ]
+            targets = [sexpr if type(sexpr) is SExpr else placeholder(sexpr) for sexpr in targets]
         assert len(mesh_shape) == len(transformations)
         real_targets = targets
         targets = np.array(targets).reshape(mesh_shape)
@@ -262,20 +240,14 @@ class SExprECondition:
                     targets = targets[:, 0]
                 else:
                     assert trans.lower() == "sum"
-                    targets = [
-                        tgsexpr.sum(targets_in_group.tolist())
-                        for targets_in_group in targets
-                    ]
+                    targets = [tgsexpr.sum(targets_in_group.tolist()) for targets_in_group in targets]
                     targets = np.array(targets)
                     if len(cur_mesh_shape) == 1:
                         eclasses.append([origin, *targets.flatten()])
             else:
                 assert trans[0].lower() == "s"
                 dim = trans[1]
-                targets = [
-                    tgsexpr.concat(targets_in_group.tolist(), dim=dim)
-                    for targets_in_group in targets
-                ]
+                targets = [tgsexpr.concat(targets_in_group.tolist(), dim=dim) for targets_in_group in targets]
                 targets = np.array(targets)
                 if len(cur_mesh_shape) == 1:
                     eclasses.append([origin, *targets.flatten()])
@@ -302,15 +274,9 @@ class ECondition:
         self.pure_scalar = all(self.is_pure_scalar_eclass(e) for e in eclasses)
         if used_names is None:
             if self.pure_scalar:
-                self.used_names = [
-                    [get_scalar_names_from_expr_str(s) for s in eclass]
-                    for eclass in eclasses
-                ]
+                self.used_names = [[get_scalar_names_from_expr_str(s) for s in eclass] for eclass in eclasses]
             else:
-                self.used_names = [
-                    [get_input_names_from_expr_str(s) for s in eclass]
-                    for eclass in eclasses
-                ]
+                self.used_names = [[get_input_names_from_expr_str(s) for s in eclass] for eclass in eclasses]
         else:
             self.used_names = used_names
         if input_names is None:
@@ -330,20 +296,12 @@ class ECondition:
                 self.is_scalar_eclass(e) for e in self.eclasses
             ), f"All eclass should be scalar eclass if any is. Got {self.eclasses=}"
             self.all_scalar = True
-            self.eq_eclasses = [
-                eclass
-                for eclass in eclasses
-                if not (len(eclass) == 2 and eclass[1] in ("true", "false"))
-            ]
+            self.eq_eclasses = [eclass for eclass in eclasses if not (len(eclass) == 2 and eclass[1] in ("true", "false"))]
         else:
             self.all_scalar = False
             self.eq_eclasses = eclasses
 
-        if (
-            len(self.eclasses) == 1
-            and len(self.eclasses[0]) == 1
-            and self.eclasses[0][0] == ""
-        ):
+        if len(self.eclasses) == 1 and len(self.eclasses[0]) == 1 and self.eclasses[0][0] == "":
             raise ValueError("Empty eclass")
 
     @staticmethod
@@ -367,10 +325,7 @@ class ECondition:
         if len(self.eclasses) == 1:
             return [self]
         else:
-            return [
-                ECondition(None, [eclass], [used_names])
-                for eclass, used_names in zip(self.eclasses, self.used_names)
-            ]
+            return [ECondition(None, [eclass], [used_names]) for eclass, used_names in zip(self.eclasses, self.used_names)]
 
     def merge(*econds: "ECondition") -> "ECondition":
         new_input_names = set.union(*[set(econd.input_names) for econd in econds])
@@ -378,9 +333,7 @@ class ECondition:
         new_used_names = list(chain(*[econd.used_names for econd in econds]))
         return ECondition(list(new_input_names), new_eclasses, new_used_names)
 
-    def extract(
-        self, input_sexpr_names: set[str], output_replacements: dict[str, str] = {}
-    ) -> Union["ECondition", None]:
+    def extract(self, input_sexpr_names: set[str], output_replacements: dict[str, str] = {}) -> Union["ECondition", None]:
         new_input_names = set()
         new_eclasses = []
         for eclass, eclass_names in zip(self.eclasses, self.used_names):
@@ -465,10 +418,7 @@ class ECondition:
         mapped_input_names = input_names
         if name_mapper is not None:
             mapped_input_names = {k: name_mapper(v) for k, v in input_names.items()}
-        eclasses = [
-            [s.format(**mapped_input_names) for s in eclass_formats]
-            for eclass_formats in eclasses_formats
-        ]
+        eclasses = [[s.format(**mapped_input_names) for s in eclass_formats] for eclass_formats in eclasses_formats]
 
         return ECondition(list(input_names.values()), eclasses)
 
@@ -479,17 +429,14 @@ class ECondition:
         input_names = []
         for sexpr in sexpr_econdition.inputs:
             name = sexpr.name
-            assert (
-                name is not None or sexpr.op == tgops.fill
-            ), f"Invalid sexpr={sexpr!r}"
+            assert name is not None or sexpr.op == tgops.fill, f"Invalid sexpr={sexpr!r}"
             if name is not None:
                 input_names.append(name)
             else:
                 assert sexpr.op == tgops.fill
                 input_names.append(sexpr.to_egg_str())
         eclasses = [
-            [sexpr if type(sexpr) is str else sexpr.to_egg_str() for sexpr in eclass]
-            for eclass in sexpr_econdition.eclasses
+            [sexpr if type(sexpr) is str else sexpr.to_egg_str() for sexpr in eclass] for eclass in sexpr_econdition.eclasses
         ]
         return ECondition(input_names, eclasses)
 
@@ -508,26 +455,16 @@ class ECondition:
 
     def to_egg_str(self, eq_only: bool = False):
         used = self.eq_eclasses if eq_only else self.eclasses
-        return "\n".join(
-            [ENODE_SPLIT.join(sorted(map(str, eclass))) for eclass in used]
-        )
+        return "\n".join([ENODE_SPLIT.join(sorted(map(str, eclass))) for eclass in used])
 
     def __repr__(self):
-        return (
-            "ECondition("
-            + "\n".join(
-                [ENODE_SPLIT.join(map(str, eclass)) for eclass in self.eclasses]
-            )
-            + ")"
-        )
+        return "ECondition(" + "\n".join([ENODE_SPLIT.join(map(str, eclass)) for eclass in self.eclasses]) + ")"
 
     def __hash__(self):
         return hash(self.to_egg_str())
 
     def to_str_eq_only(self):
-        return "\n".join(
-            [ENODE_SPLIT.join(map(str, eclass)) for eclass in self.eq_eclasses]
-        )
+        return "\n".join([ENODE_SPLIT.join(map(str, eclass)) for eclass in self.eq_eclasses])
 
 
 RANK_UNSET = -1
@@ -567,9 +504,7 @@ class ENode:
         return self.is_leaf() and "@" in self.data
 
     def is_non_tensor_leaf(self) -> bool:
-        if self.is_leaf() and (
-            self.is_numeric() or self.is_shape_literal() or self.is_symval()
-        ):
+        if self.is_leaf() and (self.is_numeric() or self.is_shape_literal() or self.is_symval()):
             return True
         else:
             try:
@@ -579,9 +514,7 @@ class ENode:
                 return False
 
     def __repr__(self):
-        arg_oks_str = (
-            "" if "arg_oks" not in self.__dict__ else f", oks={str(self.arg_oks)}"
-        )
+        arg_oks_str = "" if "arg_oks" not in self.__dict__ else f", oks={str(self.arg_oks)}"
 
         if self.is_leaf():
             return f"ENode[{self.node_id}]({self.data}, eclass={self.eclass_id}{arg_oks_str})"
@@ -599,9 +532,7 @@ class EClass:
         self.valid = False
 
         shape = shape.strip('"')
-        assert (
-            shape == "" or shape.startswith("[") and shape.endswith("]")
-        ), f"Invalid shape: {shape}"
+        assert shape == "" or shape.startswith("[") and shape.endswith("]"), f"Invalid shape: {shape}"
         self.shape: str = shape
 
     def set_representative_if_not_set(self, node: ENode, egraph: EGraph):
@@ -649,28 +580,20 @@ class EGraph:
         verbose=False,
         logger=None,
     ):
-        self.logger = logger or logging.getLogger(__name__)
+        self.logger: EntangleLogger = logger or logging.getLogger(__name__)
         self.verbose = verbose
         self.json_path = path
         with open(path) as f:
             self.data = json.load(f)
         self.nodes: list[ENode] = [
-            ENode(node_id, eclass_id, children, data)
-            for node_id, (data, eclass_id, children) in enumerate(self.data["nodes"])
+            ENode(node_id, eclass_id, children, data) for node_id, (data, eclass_id, children) in enumerate(self.data["nodes"])
         ]
-        self.node_id_to_node: dict[int, ENode] = {
-            node.node_id: node for node in self.nodes
-        }
+        self.node_id_to_node: dict[int, ENode] = {node.node_id: node for node in self.nodes}
         self.eclasses: list[EClass] = sorted(
-            [
-                EClass(eclass_id, nodes, shape)
-                for eclass_id, nodes, shape in self.data["classes"]
-            ],
+            [EClass(eclass_id, nodes, shape) for eclass_id, nodes, shape in self.data["classes"]],
             key=lambda eclass: eclass.eclass_id,
         )
-        self.eclass_id_to_eclass: dict[int, EClass] = {
-            eclass.eclass_id: eclass for eclass in self.eclasses
-        }
+        self.eclass_id_to_eclass: dict[int, EClass] = {eclass.eclass_id: eclass for eclass in self.eclasses}
 
         # Setup `used_by`
         # NOTE: will also add the root `y_eclass_id` if available.
@@ -686,24 +609,15 @@ class EGraph:
         if self.y_expr == "":
             self.y_expr = None
         if self.y_expr is not None:
-            self.y_id: int = self.lookup_expr_root(
-                self.y_expr, ignore_size=ignore_size
-            ).node_id
+            self.y_id: int = self.lookup_expr_root(self.y_expr, ignore_size=ignore_size).node_id
             self.y_eclass_id: int = self.get_enode(self.y_id).eclass_id
-            self.y_name_id = self.get_eclass(
-                self.get_enode(self.y_id).children[0]
-            ).nodes[0]
+            self.y_name_id = self.get_eclass(self.get_enode(self.y_id).children[0]).nodes[0]
             if self.y_eclass_id not in self.used_by:
                 self.used_by[self.y_eclass_id] = []
         self.yi_exprs = yi_exprs or self.data["yis"]
 
-        self.yi_ids: int = [
-            self.lookup_expr_root(yi_expr, ignore_size=ignore_size).node_id
-            for yi_expr in self.yi_exprs
-        ]
-        self.yi_eclass_ids: list[int] = [
-            self.get_enode(yi_id).eclass_id for yi_id in self.yi_ids
-        ]
+        self.yi_ids: int = [self.lookup_expr_root(yi_expr, ignore_size=ignore_size).node_id for yi_expr in self.yi_exprs]
+        self.yi_eclass_ids: list[int] = [self.get_enode(yi_id).eclass_id for yi_id in self.yi_ids]
         for yi_eclass_id in self.yi_eclass_ids:
             if yi_eclass_id not in self.used_by:
                 self.used_by[yi_eclass_id] = []
@@ -711,10 +625,7 @@ class EGraph:
         assert all(
             self.get_enode(yi_id).data in ("input", "weight") for yi_id in self.yi_ids
         ), "We have to know the yi tensor names from yi_exprs."
-        self.yi_name_ids: int = [
-            self.get_eclass(self.get_enode(yi_id).children[0]).nodes[0]
-            for yi_id in self.yi_ids
-        ]
+        self.yi_name_ids: int = [self.get_eclass(self.get_enode(yi_id).children[0]).nodes[0] for yi_id in self.yi_ids]
 
         self.logger.info(f"y_expr: {[self.y_expr]}")
         self.logger.info(f"yi_exprs: {self.yi_exprs}")
@@ -723,9 +634,7 @@ class EGraph:
 
         self.logger.info(f"Number of eclasses: {len(self.eclasses)}")
         self.logger.info(f"Number of enodes: {len(self.nodes)}")
-        self.logger.info(
-            f"After mark representative\n{self}",
-        )
+        self.logger.info(f"After mark representative\n{self}")
 
         self.post_condition_eclasses: list[EClass] = None
 
@@ -749,9 +658,7 @@ class EGraph:
     def lookup_expr_root(self, expr: str, ignore_size=False) -> ENode:
         parsed_expr = parse_expression_with_lock(expr)[0]
 
-        def lookup_expr_ids_sub(
-            root: ENode, parsed_expr: list | str
-        ) -> ENode | list[tuple[str | ENode]]:
+        def lookup_expr_ids_sub(root: ENode, parsed_expr: list | str) -> ENode | list[tuple[str | ENode]]:
             if type(parsed_expr) is str:
                 if root.data == parsed_expr:
                     return root
@@ -832,9 +739,7 @@ class EGraph:
                 oked_eclass = self.get_eclass(oked_eclass_id)
                 for user_node_id, user_arg_idx in self.used_by[oked_eclass_id]:
                     user_node = self.get_enode(user_node_id)
-                    assert (
-                        type(user_node.data) == str
-                    ), f"got {user_node=}, {user_node.data=}"
+                    assert type(user_node.data) == str, f"got {user_node=}, {user_node.data=}"
                     # setup_rank(user_node)
                     if user_node.data not in tgops.Op.OPS:
                         continue
@@ -843,10 +748,7 @@ class EGraph:
                         if user_op == tgops.matadd:
                             ec0 = self.get_eclass(user_node.children[0])
                             ec1 = self.get_eclass(user_node.children[1])
-                            if (
-                                len(ec1.nodes) == 1
-                                and self.get_enode(ec1.nodes[0]).is_non_tensor_leaf()
-                            ):
+                            if len(ec1.nodes) == 1 and self.get_enode(ec1.nodes[0]).is_non_tensor_leaf():
                                 # Allow matadd when adding a constant or both are scalar tensor
                                 pass
                             elif ec0.shape == "s" and ec1.shape == "s":
@@ -858,11 +760,7 @@ class EGraph:
                     if user_node.arg_oks[user_arg_idx] != True:
                         user_node.arg_oks[user_arg_idx] = True
                         user_eclass = self.get_eclass(user_node.eclass_id)
-                        user_eclass.used_yi_eclass_ids = (
-                            user_eclass.used_yi_eclass_ids.union(
-                                oked_eclass.used_yi_eclass_ids
-                            )
-                        )
+                        user_eclass.used_yi_eclass_ids = user_eclass.used_yi_eclass_ids.union(oked_eclass.used_yi_eclass_ids)
                         # XXX: This prunes some unnecessary nodes.
                         # if not user_eclass.valid or (
                         #     user_eclass.valid
@@ -888,10 +786,7 @@ class EGraph:
             new_new_oked = set()
             for user_node in updated_user_nodes:
                 if all(user_node.arg_oks):
-                    if (
-                        user_node.data == "slice"
-                        and user_node.children[0] == user_node.eclass_id
-                    ):
+                    if user_node.data == "slice" and user_node.children[0] == user_node.eclass_id:
                         continue
                     # print(f"User node all ok: {user_node.node_id}")
                     user_node.valid = True
@@ -901,8 +796,7 @@ class EGraph:
                     new_new_oked.add(user_node.eclass_id)
             new_oked = new_new_oked
 
-        if self.verbose:
-            self.logger.info(self)
+        self.logger.debug(self)
 
         for enode in self.nodes:
             del enode.arg_oks
@@ -974,14 +868,10 @@ class EGraph:
 
     def clone(self) -> "EGraph":
         egraph = deepcopy(self)
-        egraph.eclass_id_to_eclass = {
-            eclass.eclass_id: eclass for eclass in egraph.eclasses
-        }
+        egraph.eclass_id_to_eclass = {eclass.eclass_id: eclass for eclass in egraph.eclasses}
         egraph.node_id_to_node = {node.node_id: node for node in egraph.nodes}
 
-    def get_valid_descendants(
-        self, eclass_id: int, representative_only=False, stop_at_yi_name=False
-    ) -> list[EClass]:
+    def get_valid_descendants(self, eclass_id: int, representative_only=False, stop_at_yi_name=False) -> list[EClass]:
         """
         `stop_at_yi_name`: If True, we stop dfs at yi enode. This is for when we have
         multiple yi along a path (e.g., a path including an yi and its yi child, which
@@ -994,11 +884,7 @@ class EGraph:
         def dfs(eclass: EClass):
             if eclass in visited:
                 return
-            if (
-                stop_at_yi_name
-                and len(nodes := eclass.nodes) == 1
-                and nodes[0] in self.yi_name_ids
-            ):
+            if stop_at_yi_name and len(nodes := eclass.nodes) == 1 and nodes[0] in self.yi_name_ids:
                 return
             visited.add(eclass)
             descendants.append(eclass)
@@ -1082,9 +968,7 @@ class EGraph:
                             continue
                         include_representative_descendants(child_eclass_id)
 
-            def dfs_until_valid_desc(
-                enode_id: int, path: list[int], visited: set[int]
-            ) -> bool:
+            def dfs_until_valid_desc(enode_id: int, path: list[int], visited: set[int]) -> bool:
                 """
                 This function is to find a path from enode_id to the current sub-graph.
                 """
@@ -1156,10 +1040,7 @@ class EGraph:
                 result = enode.data
             else:
                 args_str = " ".join(
-                    extract_to_sexpr_str_sub(
-                        self.get_representative(arg_eclass_id).node_id
-                    )
-                    for arg_eclass_id in enode.children
+                    extract_to_sexpr_str_sub(self.get_representative(arg_eclass_id).node_id) for arg_eclass_id in enode.children
                 )
                 result = f"({enode.data} {args_str})"
             node_id_to_sexpr_str[node_id] = result
@@ -1174,13 +1055,7 @@ class EGraph:
             if len(enodes) <= 1:
                 # Doesn't form an eclass.
                 continue
-            eclass_str_list.append(
-                ENODE_SPLIT.join(
-                    sorted(
-                        [extract_to_sexpr_str_sub(enode.node_id) for enode in enodes]
-                    )
-                )
-            )
+            eclass_str_list.append(ENODE_SPLIT.join(sorted([extract_to_sexpr_str_sub(enode.node_id) for enode in enodes])))
         eclasses_str = "\n".join(sorted(eclass_str_list))
         return eclasses_str
 
@@ -1246,11 +1121,7 @@ class EGraph:
                 color=color,
                 style="filled",
                 fillcolor="ghostwhite",
-                penwidth=(
-                    3.5
-                    if enode == eclass.representative
-                    else (2.5 if enode in eclass.candidates else 1)
-                ),
+                penwidth=(3.5 if enode == eclass.representative else (2.5 if enode in eclass.candidates else 1)),
             )
             return pydot_node
 
@@ -1280,9 +1151,7 @@ class EGraph:
         # Add Cluster and Node
         for eclass in self.eclasses:
             eclass_id = eclass.eclass_id
-            if all(
-                self.get_enode(node_id).is_non_tensor_leaf() for node_id in eclass.nodes
-            ):
+            if all(self.get_enode(node_id).is_non_tensor_leaf() for node_id in eclass.nodes):
                 continue
             if all(self.get_enode(node_id).data == "noop" for node_id in eclass.nodes):
                 continue
@@ -1301,11 +1170,7 @@ class EGraph:
                 enode_to_pydot_node[enode] = pydot_node
                 cluster.add_node(pydot_node)
                 finally_used_enodes_per_eclass[eclass].append(enode)
-            if (
-                add_dotdotdot
-                and allowed is not None
-                and any(node_id not in allowed[eclass_id] for node_id in eclass.nodes)
-            ):
+            if add_dotdotdot and allowed is not None and any(node_id not in allowed[eclass_id] for node_id in eclass.nodes):
                 # Add an `...` node to represent the hidden nodes.
                 pydot_node = create_pydot_node_ellipsis(eclass)
                 cluster.add_node(pydot_node)
@@ -1334,24 +1199,16 @@ class EGraph:
                     if arg_eclass.nodes[0] in enode_to_pydot_node:
                         dst_pydot_node = enode_to_pydot_node[arg_eclass.nodes[0]]
                     elif len(finally_used_enodes_per_eclass[arg_eclass]) > 0:
-                        dst_pydot_node = enode_to_pydot_node[
-                            finally_used_enodes_per_eclass[arg_eclass][0]
-                        ]
+                        dst_pydot_node = enode_to_pydot_node[finally_used_enodes_per_eclass[arg_eclass][0]]
                     elif arg_eclass in eclass_to_pydot_dot_node:
                         dst_pydot_node = eclass_to_pydot_dot_node[arg_eclass]
                     else:
-                        raise RuntimeError(
-                            f"Cannot find a node for {arg_eclass_id} in {arg_eclass.nodes}"
-                        )
+                        raise RuntimeError(f"Cannot find a node for {arg_eclass_id} in {arg_eclass.nodes}")
 
                     pydot_edge = pydot.Edge(
                         enode_to_pydot_node[node],
                         dst_pydot_node,
-                        label=(
-                            ""
-                            if len(node.children) <= 1
-                            else f'"{arg_idx}:{arg_eclass.eclass_id}"'
-                        ),
+                        label=("" if len(node.children) <= 1 else f'"{arg_idx}:{arg_eclass.eclass_id}"'),
                         lhead=f"cluster_{arg_eclass.eclass_id}",
                     )
                     arg_idx += 1

@@ -1,5 +1,8 @@
 # Copyright (c) 2025 ByteDance Ltd. and/or its affiliates
 #
+# Modifications Copyright (c) 2025 [Zhanghan Wang]
+# Note: Support better logging.
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -20,7 +23,10 @@ from entangle.sgraph.infer.infer import InferManager
 from entangle.sgraph.sgraph import SGraph
 from entangle.sgraph.sskeleton import CutGroup, SSkeleton
 from entangle.tools.egg import EggRunner
-from entangle.utils.print_utils import BRI, BYELLOW, RST, print_ft
+from entangle.utils.print_utils import BRI, BYELLOW, RST, print_ft, get_global_logger
+
+
+LOGGER = None
 
 
 class SSkeletonInferManager(InferManager):
@@ -35,6 +41,8 @@ class SSkeletonInferManager(InferManager):
         super().__init__(
             origin_sgraph, target_sgraphs, cut_groups, egg_runner, save_group
         )
+        global LOGGER
+        LOGGER = get_global_logger()
         # This cut_groups is not ordered.
         # To get ordered cut_groups, use `self.sskeleton`.
         self.sskeleton = SSkeleton(origin_sgraph, target_sgraphs, cut_groups)
@@ -49,10 +57,10 @@ class SSkeletonInferManager(InferManager):
         end: int,
         through: set[int] = None,
     ):
-        print_ft(f"{BRI}All CutGroups to Solve (#={len(self.sskeleton)}){RST}", c="=")
+        LOGGER.info_ft(f"{BRI}All CutGroups to Solve (#={len(self.sskeleton)}){RST}", c="=")
         for idx, cg in enumerate(self.sskeleton):
             print(idx, cg)
-        print_ft("", c="=")
+        LOGGER.info_ft("", c="=")
 
         if through is None:
             through = set()
@@ -60,7 +68,7 @@ class SSkeletonInferManager(InferManager):
             begin += len(self.sskeleton)
         if end == -1:
             end = len(self.sskeleton)
-        print_ft(f"{BRI}Infer Postcondition{RST}", c="=")
+        LOGGER.info_ft(f"{BRI}Infer Postcondition{RST}", c="=")
         os.makedirs(root_dirname, exist_ok=True)
         for cut_group in self.sskeleton:
             begin_date = datetime.now()
@@ -70,10 +78,10 @@ class SSkeletonInferManager(InferManager):
             is_pass_through = group_id in through
             dirname = osp.join(root_dirname, f"group{group_id}")
 
-            print_ft(f"{BRI}{group_name}{RST} input?({is_only_input})")
+            LOGGER.info_ft(f"{BRI}{group_name}{RST} input?({is_only_input})")
 
             if group_id >= end:
-                print_ft(f"{BRI}Reached end group (group_id={group_id}), exiting.{RST}")
+                LOGGER.info_ft(f"{BRI}Reached end group (group_id={group_id}), exiting.{RST}")
                 break
 
             if group_id >= begin:
@@ -84,7 +92,7 @@ class SSkeletonInferManager(InferManager):
                 )
 
             self.post_run_process(cut_group, is_pass_through, dirname)
-            print_ft(
+            LOGGER.info_ft(
                 f"Done with {BRI}{group_name}{RST} in {datetime.now() - begin_date}"
             )
             print()

@@ -1,5 +1,8 @@
 # Copyright (c) 2025 ByteDance Ltd. and/or its affiliates
 #
+# Modifications Copyright (c) 2025 [Zhanghan Wang]
+# Note: Support better logging.
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -83,7 +86,7 @@ def run_one(model, origin_name, target_name, cmd):
     additional_args = ""
     if args.verbose:
         additional_args += " --verbose"
-    cmd = f"export OUTDIR={output_dir} && mkdir -p $OUTDIR; {cmd} -o {output_dir} {additional_args} | tee $OUTDIR/output.log "
+    cmd = f"export OUTDIR={output_dir} && mkdir -p $OUTDIR; {cmd} -o {output_dir} {additional_args}"
     print(cmd)
     if args.dry_run:
         return
@@ -106,9 +109,10 @@ def run_one(model, origin_name, target_name, cmd):
 def main():
     model = args.task
 
-    tg_args = ""
+    tg_args = ["--console_level", "ERROR", "--file_level", "INFO"]
     if not args.enable_rich:
-        tg_args += " --disable_rich"
+        tg_args += ["--disable_rich"]
+    tg_args = " ".join(tg_args)
 
     if args.task in ("aws_llama", "gpt", "qwen2"):
         model = args.task

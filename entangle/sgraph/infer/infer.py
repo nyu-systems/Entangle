@@ -1,5 +1,8 @@
 # Copyright (c) 2025 ByteDance Ltd. and/or its affiliates
 #
+# Modifications Copyright (c) 2025 [Zhanghan Wang]
+# Note: Support better logging.
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -34,8 +37,9 @@ from entangle.sgraph.transform import CannotMatchAllDistOps, SGraphTransformer
 from entangle.sgraph.visualization import visualize_sgraph_to_infer
 from entangle.tools.egg import EggRunner
 from entangle.utils import ENODE_SPLIT
-from entangle.utils.print_utils import BGREEN, BRED, BRI, BYELLOW, RST, print_ft
+from entangle.utils.print_utils import BGREEN, BRED, BRI, BYELLOW, RST, get_global_logger, print_ft
 
+LOGGER = None
 
 graph_merge_transform_lock = threading.Lock()
 
@@ -158,6 +162,9 @@ class InferManager:
         save_group: bool = False,
         max_self_provable_check_worker: int = None,
     ):
+        global LOGGER
+        LOGGER = get_global_logger()
+
         self.origin_sgraph: SGraph = origin_sgraph
         self.target_sgraphs: list[SGraph] = target_sgraphs
         self.sgraphs = [origin_sgraph] + target_sgraphs
@@ -170,17 +177,13 @@ class InferManager:
             num_add = len(sgraph.name_to_sexpr)
             self.name_to_sexpr.update(sgraph.name_to_sexpr)
             for name, sexpr in sgraph.name_to_sexpr.items():
-                assert (
-                    name not in self.name_to_sgraph
-                ), f"Name conflict: {name}: {sexpr!r}"
+                assert name not in self.name_to_sgraph, f"Name conflict: {name}: {sexpr!r}"
                 self.name_to_sgraph[name] = sgraph
             assert len(self.name_to_sexpr) == num_before + num_add, "Name conflict."
 
         self.egg_runner = egg_runner
         self.save_group = save_group
-        self.max_self_provable_check_worker = (
-            max_self_provable_check_worker or os.cpu_count() * 2
-        )
+        self.max_self_provable_check_worker = max_self_provable_check_worker or os.cpu_count() * 2
 
         self.econditions: list[ECondition] = []
         self.added_econdition_strs: set[str] = set()  # This is just for unique..
@@ -218,7 +221,7 @@ class InferManager:
         if origin_inpt not in self.origin_to_targets:
             self.origin_to_targets[origin_inpt] = set()
         new = tuple(sorted([t for t in target_inpts]))
-        rich.print(f"origin={origin_inpt} <---> targets={new}")
+        LOGGER.info(f"origin={origin_inpt} <---> targets={new}")
         self.origin_to_targets[origin_inpt].add(new)
         if origin_inpt not in self.origin_to_econditions:
             self.origin_to_econditions[origin_inpt] = set()
@@ -280,13 +283,8 @@ class InferManager:
             # Check and add non-scalar conditions
             econd_strs = non_scalar_econd_strs
             econds = non_scalar_econds
-            econd_name_shape_mappings = [
-                {f"{n}@": self.name_to_sexpr[n].shape for n in e.input_names}
-                for e in econds
-            ]
-            num_proc = max(
-                min(len(econd_strs) // 8, self.max_self_provable_check_worker), 1
-            )
+            econd_name_shape_mappings = [{f"{n}@": self.name_to_sexpr[n].shape for n in e.input_names} for e in econds]
+            num_proc = max(min(len(econd_strs) // 8, self.max_self_provable_check_worker), 1)
             with DummyPool(num_proc) as p:
                 provable_ids_list = p.map(
                     self.egg_runner.check_self_provable,
@@ -296,14 +294,10 @@ class InferManager:
             provable_ids_list = [None] * len(non_scalar_econd_strs)
 
         have_required_name = False
-        for econd, econd_str, provable_ids in zip(
-            non_scalar_econds, non_scalar_econd_strs, provable_ids_list
-        ):
+        for econd, econd_str, provable_ids in zip(non_scalar_econds, non_scalar_econd_strs, provable_ids_list):
             enode_strs: list[str] = econd_str.split(ENODE_SPLIT)
             if provable_ids is not None:
-                assert len(enode_strs) == len(
-                    provable_ids
-                ), f"{econd_strs=}, {provable_ids=}, {econd=}, {econd.eclasses=}"
+                assert len(enode_strs) == len(provable_ids), f"{econd_strs=}, {provable_ids=}, {econd=}, {econd.eclasses=}"
                 pruned_econd = econd.prune_self_provable(provable_ids)
                 pruned_econd_str = pruned_econd.to_egg_str()
             else:
@@ -319,19 +313,15 @@ class InferManager:
                     have_required_name = True
             # Check if `pruned_econd` uses any forbidden names.
             if forbidden_names is not None:
-                if any(
-                    name in pruned_econd.input_names_set for name in forbidden_names
-                ):
-                    raise FoundForbiddenNameError(
-                        f"Found forbidden name in econdition: {pruned_econd=}\n{forbidden_names=}"
-                    )
+                if any(name in pruned_econd.input_names_set for name in forbidden_names):
+                    raise FoundForbiddenNameError(f"Found forbidden name in econdition: {pruned_econd=}\n{forbidden_names=}")
             kept_econds.append(pruned_econd)
             kept_econd_strs.append(pruned_econd_str)
             if do_add:
                 if pruned_econd_str in self.added_econdition_strs:
                     exisited_econd_strs.append(pruned_econd_str)
         if required_name is not None and not have_required_name:
-            print(f"{BRED}Required name not satisfied: {required_name}{RST}")
+            LOGGER.info(f"{BRED}Required name not satisfied: {required_name}{RST}")
             return []
         if do_add:
             for econd, econd_str in zip(kept_econds, kept_econd_strs):
@@ -340,15 +330,15 @@ class InferManager:
                     self.added_econdition_strs.add(econd_str)
 
         # Below are all logging for debugging.
-        print(f"{BRI}Required name{RST}: {required_name}")
-        print(f"{BRI}Kept EConditions:{RST}")
-        rich.print(kept_econd_strs)
-        print(f"{BRI}Pruned EConditions:{RST} {pruned_idx=}")
+        LOGGER.info(f"{BRI}Required name{RST}: {required_name}")
+        LOGGER.info(f"{BRI}Kept EConditions:{RST}")
+        LOGGER.info(kept_econd_strs)
+        LOGGER.info(f"{BRI}Pruned EConditions:{RST} {pruned_idx=}")
         if self.egg_runner.verbose:
-            rich.print(pruned_econd_strs)
-        print(f"{BRI}Existed EConditions:{RST} {pruned_idx=}")
+            LOGGER.info(pruned_econd_strs)
+        LOGGER.info(f"{BRI}Existed EConditions:{RST} {pruned_idx=}")
         if self.egg_runner.verbose:
-            rich.print(exisited_econd_strs)
+            LOGGER.info(exisited_econd_strs)
         if self.egg_runner.verbose and filter_info_dirname is not None:
             path = osp.join(filter_info_dirname, "pruned_econditions.sexpr")
             with open(path, "w") as f:
@@ -378,10 +368,10 @@ class InferManager:
         for econdition in raw_econditions:
             extracted = econdition.extract(input_sexpr_names, output_replacements)
             if self.egg_runner.verbose:
-                print(f"{BRI}Try to extracted ECondition from :{RST}")
-                rich.print(econdition)
-                print(f"{BRI}Extracted ECondition:{RST}")
-                rich.print(extracted)
+                LOGGER.info(f"{BRI}Try to extracted ECondition from :{RST}")
+                LOGGER.info(econdition)
+                LOGGER.info(f"{BRI}Extracted ECondition:{RST}")
+                LOGGER.info(extracted)
             if extracted:
                 if split_scalar and extracted.all_scalar:
                     scalar_econditions.append(extracted)
@@ -394,50 +384,41 @@ class InferManager:
 
     def save_preconditions(self, econditions: list[ECondition], dirname: str):
         path = osp.symabspath(osp.join(dirname, "precondition.sexpr"))
-        precondition_strs = {
-            s for s in map(ECondition.to_egg_str, econditions) if s.find("true") == -1
-        }
+        precondition_strs = {s for s in map(ECondition.to_egg_str, econditions) if s.find("true") == -1}
         precondition_str = "\n".join(precondition_strs)
         unique = "\n".join(set(precondition_str.split("\n")))
         if unique.count("\n") > 20:
-            print(f"{BRI}Precondition:{RST}: too long to print, please check {path}")
+            LOGGER.info(f"{BRI}Precondition:{RST}: too long to print, please check {path}")
         else:
-            print(f"{BRI}Precondition:{RST}")
-            rich.print(unique)
+            LOGGER.info(f"{BRI}Precondition:{RST}")
+            LOGGER.info(unique)
         with open(path, "a") as f:
             f.write(f"# Preconditions\n")
             f.write(unique)
 
     def save_constant_preconditions(self, constant_sexprs: list[SExpr], dirname: str):
         constant_conditions = [
-            f"{s.get_placeholderized(keep_constant=False).to_egg_str()}{ENODE_SPLIT}{s.to_egg_str()}"
-            for s in constant_sexprs
+            f"{s.get_placeholderized(keep_constant=False).to_egg_str()}{ENODE_SPLIT}{s.to_egg_str()}" for s in constant_sexprs
         ]
         with open(osp.join(dirname, "precondition.sexpr"), "a") as f:
             f.write("".join(["\n" + s for s in constant_conditions]))
 
-    def save_scalar_conditions(
-        self, scalar_econditions: list[ECondition], dirname: str, used_names: set[str]
-    ):
+    def save_scalar_conditions(self, scalar_econditions: list[ECondition], dirname: str, used_names: set[str]):
         with open(osp.join(dirname, "precondition.scalar.sexpr"), "a") as f:
-            scalar_econditions_strs = [
-                s for s in [c.to_egg_str(eq_only=True) for c in scalar_econditions]
-            ]
+            scalar_econditions_strs = [s for s in [c.to_egg_str(eq_only=True) for c in scalar_econditions]]
             if self.egg_runner.verbose:
-                print("Scalar pre-conditions: ", end="")
+                LOGGER.info("Scalar pre-conditions: ", end="")
                 if len(scalar_econditions_strs) > 0:
                     strs = "\n".join(scalar_econditions_strs).split("\n")
-                    rich.print(list(filter(lambda x: x != "", strs)))
+                    LOGGER.info(list(filter(lambda x: x != "", strs)))
                 else:
-                    rich.print([])
+                    LOGGER.info([])
             f.write("".join([f"\n{s}" for s in scalar_econditions_strs]))
         with open(osp.join(dirname, "precondition.scalar.smtlib"), "a") as f:
-            assertions = list(
-                chain(*[ec.to_smtlib_strs() for ec in scalar_econditions])
-            )
+            assertions = list(chain(*[ec.to_smtlib_strs() for ec in scalar_econditions]))
             if self.egg_runner.verbose:
-                print("Scalar conditions (smtlib): ", end="")
-                rich.print(assertions)
+                LOGGER.info("Scalar conditions (smtlib): ", end="")
+                LOGGER.info(assertions)
             f.write("\n".join([s for s in assertions]))
 
     def precompute_all_scalar_conditions(self):
@@ -446,9 +427,7 @@ class InferManager:
         It pre-computes all the scalar preconditions for EggRunner to use
         such that the self-provable check can correctly work.
         """
-        assertions = list(
-            chain(*[ec.to_smtlib_strs() for ec in self.scalar_econditions])
-        )
+        assertions = list(chain(*[ec.to_smtlib_strs() for ec in self.scalar_econditions]))
         scalar_econd_str = "\n".join([s for s in assertions])
         self.all_scalar_econd_str = scalar_econd_str
         self.egg_runner.all_scalar_econd_str = scalar_econd_str
@@ -492,23 +471,14 @@ class InferManager:
                 for k, v in output_back_replacements.items()
                 if k in tsf_output_names and len(v) > 1
             ]
-            print("Back replacing:")
-            print("output_names: ", end="")
-            rich.print(sorted(output_names))
-            print("tsf_output_names: ", end="")
-            rich.print(sorted(tsf_output_names))
-            print("output_back_replacements: ", end="")
-            rich.print(output_back_replacements)
-            print("used_back_replacements: ", end="")
-            rich.print(used_back_replacements)
+            LOGGER.info("Back replacing:")
+            LOGGER.info(f"output_names: {rich.pretty.pretty_repr(sorted(output_names))}")
+            LOGGER.info(f"tsf_output_names: {rich.pretty.pretty_repr(sorted(tsf_output_names))}")
+            LOGGER.info(f"output_back_replacements: {rich.pretty.pretty_repr(output_back_replacements)}")
+            LOGGER.info(f"used_back_replacements: {rich.pretty.pretty_repr(used_back_replacements)}")
             if len(used_back_replacements) > 0:
-                eclasses = [
-                    [self.name_to_sexpr[n].get_placeholderized() for n in names]
-                    for names in used_back_replacements
-                ]
-                econdition = ECondition.from_sexpr_econdition(
-                    SExprECondition(inputs=list(chain(*eclasses)), eclasses=eclasses)
-                )
+                eclasses = [[self.name_to_sexpr[n].get_placeholderized() for n in names] for names in used_back_replacements]
+                econdition = ECondition.from_sexpr_econdition(SExprECondition(inputs=list(chain(*eclasses)), eclasses=eclasses))
                 postcondition = ECondition.from_str(postcondition_str)
                 # self.add_econdition(econdition)
                 # # Merge into `postcondition` because we add it later.
@@ -548,7 +518,7 @@ class InferManager:
         # Only do inference from the begin index.
         # But we still need to add the econditions after this if statement.
 
-        rich.print(cut_group)
+        LOGGER.info(cut_group)
 
         if begin_names is None:
             begin_names = self.conditioned_names
@@ -568,11 +538,7 @@ class InferManager:
         if additional_input_names:
             sexpr_names_set.update(additional_input_names)
         scalar_sexprs = [
-            s
-            for s in chain(
-                *[sg.get_scalar_sexprs() + sg.get_shape_scalars() for sg in sgraphs]
-            )
-            if s.name is not None
+            s for s in chain(*[sg.get_scalar_sexprs() + sg.get_shape_scalars() for sg in sgraphs]) if s.name is not None
         ]
         scalar_names = set()
         for s in scalar_sexprs:
@@ -586,15 +552,11 @@ class InferManager:
         sexpr_names_set.update([s.name for s in input_sexprs])
         sexpr_names_set.update([s.name for s in output_sexprs])
         sexpr_names_set.update([s.name for s in constant_sexprs])
-        print(f"{BRI}Econdition leaves names:{RST}")
-        print("Input leaves:", end="")
-        rich.print(sorted([s.name for s in input_sexprs]))
-        print("Scalar leaves:", end="")
-        rich.print(list(set([n for n in scalar_names])))
-        print("Constant leaves:", end="")
-        rich.print(sorted([s.name for s in constant_sexprs]))
-        print("Output leaves:", end="")
-        rich.print(sorted([s.name for s in output_sexprs]))
+        LOGGER.info(f"{BRI}Econdition leaves names:{RST}")
+        LOGGER.info(f"Input leaves: {rich.pretty.pretty_repr(sorted([s.name for s in input_sexprs]))}")
+        LOGGER.info(f"Scalar leaves: {rich.pretty.pretty_repr(sorted(list(set([n for n in scalar_names]))))}")
+        LOGGER.info(f"Constant leaves: {rich.pretty.pretty_repr(sorted([s.name for s in constant_sexprs]))}")
+        LOGGER.info(f"Output leaves: {rich.pretty.pretty_repr(sorted([s.name for s in output_sexprs]))}")
         # -------------------------------------------------------------------------------------------------
         # 1. Save cs and cd.
         # Note that it is possible the outputs were changed
@@ -602,25 +564,17 @@ class InferManager:
         try:
             with graph_merge_transform_lock:
                 # 1.1. Save cs
-                out_re, tsf_origin_sgraph = save_merged(
-                    [origin_sgraph], osp.join(dirname, "cs.sexpr"), return_merged=True
-                )
+                out_re, tsf_origin_sgraph = save_merged([origin_sgraph], osp.join(dirname, "cs.sexpr"), return_merged=True)
                 output_replacements.update(out_re)
                 # 1.2. Save cd
-                out_re, tsf_target_sgraph = save_merged(
-                    target_sgraphs, osp.join(dirname, "cd.sexpr"), return_merged=True
-                )
+                out_re, tsf_target_sgraph = save_merged(target_sgraphs, osp.join(dirname, "cd.sexpr"), return_merged=True)
             output_replacements.update(out_re)
             # 1.3. Save shapes
             save_shapes(
                 chain(
                     tsf_origin_sgraph.sexprs,
                     tsf_target_sgraph.sexprs,
-                    [
-                        self.name_to_sexpr[n]
-                        for n in sexpr_names_set
-                        if n not in scalar_names
-                    ],
+                    [self.name_to_sexpr[n] for n in sexpr_names_set if n not in scalar_names],
                 ),
                 osp.join(dirname, "shapes.json"),
             )
@@ -636,9 +590,7 @@ class InferManager:
             tsf_origin_sgraph.save(path, True)
             tsf_target_sgraph.save(path, True)
         # 2.1. Save preconditions
-        used_econditions = (
-            self.econditions if raw_econditions is None else raw_econditions
-        )
+        used_econditions = self.econditions if raw_econditions is None else raw_econditions
         used_econditions = chain(used_econditions, self.scalar_econditions)
         econditions, scalar_econditions = self.filter_econditions(
             used_econditions,
@@ -653,7 +605,7 @@ class InferManager:
         # -------------------------------------------------------------------------------------------------
         # 2.3. Save scalar conditions
         self.save_scalar_conditions(self.scalar_econditions, dirname, sexpr_names_set)
-        print()
+        LOGGER.info("")
 
         # -------------------------------------------------------------------------------------------------
         # 3. Save replacements
@@ -663,24 +615,20 @@ class InferManager:
         # -------------------------------------------------------------------------------------------------
         # 4. Save SubInferInfo if requested.
         if self.save_group:
-            sub_infer_info = SubInferInfo(
-                origin_sgraph, target_sgraphs, self.econditions, self.scalar_econditions
-            )
+            sub_infer_info = SubInferInfo(origin_sgraph, target_sgraphs, self.econditions, self.scalar_econditions)
             info_path = osp.join(dirname, "sub_infer_info.pkl")
             sub_infer_info.save(info_path)
-            print(f"{BGREEN}Saved SubInferInfo into {info_path}{RST}")
+            LOGGER.info(f"{BGREEN}Saved SubInferInfo into {info_path}{RST}")
 
         # -------------------------------------------------------------------------------------------------
         # 5. Skip if only input.
         if is_only_input or is_only_constant or assume_provided:
-            rich.print("\n".join(str(cut_group).split("\n")[:3]))
+            LOGGER.info("\n".join(str(cut_group).split("\n")[:3]))
             self.egg_runner.copy_pre_as_post(dirname)
             if len(econditions) == 0:
-                print(f"{BRED}Skipped{RST}: Not provided.")
+                LOGGER.info(f"{BRED}Skipped{RST}: Not provided.")
             else:
-                print(
-                    f"{BGREEN}Skipped{RST}: Found {len(econditions)}, assuming {BRI}Provieded{RST}."
-                )
+                LOGGER.info(f"{BGREEN}Skipped{RST}: Found {len(econditions)}, assuming {BRI}Provieded{RST}.")
             return
 
         egg_runner.upload(dirname)
@@ -688,10 +636,10 @@ class InferManager:
         if not is_pass_through:
             # 6.1. Invoke Egg to infer postcondition.
             run_begin = datetime.now()
-            print(f"{BGREEN}Started at {run_begin}{RST}")
+            LOGGER.info(f"{BGREEN}Started at {run_begin}{RST}")
             egg_runner.run(dirname, tmux_window_id=f"{group_name}", mode="infer")
 
-            print(f"Saturation and Extraction done in {datetime.now() - run_begin}")
+            LOGGER.info(f"Saturation and Extraction done in {datetime.now() - run_begin}")
             egg_runner.download(dirname)
             try:
                 self.replace_back_postcondition(
@@ -701,17 +649,15 @@ class InferManager:
                     dirname,
                 )
             except FileNotFoundError as e:
-                print(
-                    f"{BRED}Result file wasn't found. Please check the log {osp.join(dirname, 'output.log')}{RST}"
-                )
+                LOGGER.info(f"{BRED}Result file wasn't found. Please check the log {osp.join(dirname, 'output.log')}{RST}")
                 raise e
             # Also print the group here because if might be flooded by debug outputs.
-            rich.print(cut_group)
+            LOGGER.info(cut_group)
         else:
             # 6.2. Do the pass-through, call egg runner if we need visualization.
             # Pass through the preconditions and computations as postconditions.
             egg_runner.copy_pre_as_post(dirname)
-            print(f"{BYELLOW}Pass through for postcondition in {group_name}.{RST}")
+            LOGGER.info(f"{BYELLOW}Pass through for postcondition in {group_name}.{RST}")
 
         return output_replacements
 
@@ -721,11 +667,7 @@ class InferManager:
         is_pass_through: bool,
         dirname: str,
     ) -> Optional[ECondition]:
-        if (
-            not cut_group.is_only_input()
-            and not cut_group.is_only_constant()
-            and not is_pass_through
-        ):
+        if not cut_group.is_only_input() and not cut_group.is_only_constant() and not is_pass_through:
             # 1. Precondition for inputs will be added before `run` using `add_econdition`
             # 2. Only-constant econditions will also be added before.
             # 3. Pass-through cut groups doesn't generate new conditions.
@@ -746,7 +688,7 @@ class InferManager:
         check_impl_dirname = osp.join(root_dirname, "check_impl")
 
         begin_date = datetime.now()
-        print_ft(f"{BRI}Final check_impl{RST}")
+        LOGGER.info_ft(f"{BRI}Final check_impl{RST}")
 
         for idx, expected in enumerate(expected_list):
             this_begin_date = datetime.now()
@@ -765,13 +707,9 @@ class InferManager:
             cut_group = CutGroup(origin_cut, target_cuts)
             # `run_one` will add the preconditions because sexprs in `cur_group` are
             # already conditioned.
-            additional_econditions = self.origin_to_econditions.get(
-                origin_cut.name, set()
-            )
-            additional_input_names = set(
-                chain(*[econd.input_names for econd in additional_econditions])
-            )
-            # print(additional_input_names)
+            additional_econditions = self.origin_to_econditions.get(origin_cut.name, set())
+            additional_input_names = set(chain(*[econd.input_names for econd in additional_econditions]))
+            # LOGGER.info(additional_input_names)
             output_replacement = self.run_one(
                 dirname,
                 cut_group,
@@ -782,17 +720,13 @@ class InferManager:
             )
 
             # Save the expected post condition.
-            print(f"{BRI}Checking expected:{RST}")
-            rich.print(expected)
+            LOGGER.info(f"{BRI}Checking expected:{RST}")
+            LOGGER.info(expected)
             save_expected(dirname, expected, output_replacement)
             egg_runner.upload(dirname)
             egg_runner.run(dirname, group_name, mode="check_impl")
             egg_runner.download(dirname, postcondition=False)
-            print(f"\n{BGREEN}Check Implication Succeed! {RST}")
-            print_ft(
-                f"Done with {BRI}Final check_impl{RST} in {datetime.now() - this_begin_date}"
-            )
-            print()
-        print_ft(
-            f"Done all {BRI}Final check_impl{RST} in {datetime.now() - begin_date}"
-        )
+            LOGGER.print(f"{BGREEN}Check Implication Succeed! {RST}")
+            LOGGER.print_ft(f"Done with {BRI}Final check_impl{RST} in {datetime.now() - this_begin_date}")
+            LOGGER.info("")
+        LOGGER.print_ft(f"Done all {BRI}Final check_impl{RST} in {datetime.now() - begin_date}")

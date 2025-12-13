@@ -1,5 +1,8 @@
 # Copyright (c) 2025 ByteDance Ltd. and/or its affiliates
 #
+# Modifications Copyright (c) 2025 [Zhanghan Wang]
+# Note: Support better logging.
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -34,9 +37,9 @@ from entangle.sgraph.sgraph import SGraph
 from entangle.sgraph.sskeleton import CutGroup
 from entangle.sgraph.transform import CannotMatchAllDistOps
 from entangle.tools.egg import EggRunner
-from entangle.utils.print_utils import BGREEN, BRED, BRI, BYELLOW, RST, print_ft
+from entangle.utils.print_utils import BGREEN, BRED, BRI, BYELLOW, RST, print_ft, get_global_logger
 
-logger = logging.getLogger(__name__)
+LOGGER = None
 
 
 class CannotFindPotentialTargetOutputs(Exception): ...
@@ -60,9 +63,10 @@ class GreedyExplorativeInferManager(InferManager):
         `way`: either `set.union` or `set.intersection`. In the method `get_commom_users`, we use `way`
         for the users of each initial sexpr. `set.union` is a safer choice.
         """
-        super().__init__(
-            origin_sgraph, target_sgraphs, cut_groups, egg_runner, save_group
-        )
+        super().__init__(origin_sgraph, target_sgraphs, cut_groups, egg_runner, save_group)
+        global LOGGER
+        LOGGER = get_global_logger()
+
         if through_sexpr_cb is None:
             through_sexpr_cb = lambda _: False
         self.through_sexpr_cb = through_sexpr_cb
@@ -74,14 +78,12 @@ class GreedyExplorativeInferManager(InferManager):
         self.barriers: set[str] = set()
         self.manual_cut_mapping: dict[str, tuple[str]] = {}
         for cg in cut_groups:
-            self.manual_cut_mapping[cg.origin_cut.name] = [
-                cut.name for cut in cg.target_cuts
-            ]
+            self.manual_cut_mapping[cg.origin_cut.name] = [cut.name for cut in cg.target_cuts]
             self.barriers.update([cut.name for cut in cg.target_cuts])
 
     def get_mapped_targets(self, origin_name: str) -> list[list[str]]:
         if origin_name not in self.origin_to_targets:
-            print(
+            LOGGER.info(
                 f"{BYELLOW}Warning: No mapped targets found for {origin_name}.{RST} "
                 f"This is only valid for those empty tensors for inplace ops."
             )
@@ -128,7 +130,7 @@ class GreedyExplorativeInferManager(InferManager):
 
         should_ignore = lambda s: s.op.constant or s.op == tgops.empty
 
-        rich.print(f"{init_sexprs=}")
+        LOGGER.info(f"{init_sexprs=}")
 
         while len(heads) > 0:
             new_heads = set()
@@ -138,9 +140,7 @@ class GreedyExplorativeInferManager(InferManager):
                     results.add(sexpr)
                 else:
                     assert sexpr not in min_steps_map
-                    arg_min_steps = [
-                        min_steps_map[s] for s in sexpr.args if not should_ignore(s)
-                    ]
+                    arg_min_steps = [min_steps_map[s] for s in sexpr.args if not should_ignore(s)]
                     if len(arg_min_steps) == 0:
                         prev_min_steps = 0
                     elif len(arg_min_steps) == 1:
@@ -155,9 +155,7 @@ class GreedyExplorativeInferManager(InferManager):
                         min_steps = prev_min_steps + 1
                         results.add(sexpr)
                     min_steps_map[sexpr] = min_steps
-                if min_steps >= limit or (
-                    (min_steps > 0 and sexpr.name in self.barriers)
-                ):
+                if min_steps >= limit or ((min_steps > 0 and sexpr.name in self.barriers)):
                     continue
                 if min_steps > 1 and sexpr.op.skeleton:
                     if sexpr.op in (
@@ -165,9 +163,7 @@ class GreedyExplorativeInferManager(InferManager):
                         tgops.matsub,
                         tgops.matdiv,
                         tgops.ewmul,
-                    ) and (
-                        len(sexpr.params) >= 1 or any(s.shape == [] for s in sexpr.args)
-                    ):
+                    ) and (len(sexpr.params) >= 1 or any(s.shape == [] for s in sexpr.args)):
                         # We allow skeleton + - * / of at least one scalar.
                         pass
                     else:
@@ -214,9 +210,7 @@ class GreedyExplorativeInferManager(InferManager):
         mapped_args: set[SExpr] = set()
         visited: set[SExpr] = set()
         terminate_cb = lambda x: x.name in self.origin_to_targets
-        for sexpr, is_leaf, is_term in output.post_order_dfs(
-            return_is_leaf=True, terminate_callback=terminate_cb
-        ):
+        for sexpr, is_leaf, is_term in output.post_order_dfs(return_is_leaf=True, terminate_callback=terminate_cb):
             sexpr: SExpr
             if is_leaf or is_term:
                 mapped_args.add(sexpr)
@@ -259,13 +253,13 @@ class GreedyExplorativeInferManager(InferManager):
             dirname = osp.join(root_dirname, group_name)
             os.makedirs(dirname, exist_ok=True)
 
-            print_ft(f"{BRI}{group_name}{RST}")
+            LOGGER.info_ft(f"{BRI}{group_name}{RST}")
 
             origin_attr = self.origin_sgraph.nx_graph.nodes[origin_sexpr_id]
             origin_sexpr: SExpr = origin_attr["sexpr"]
-            print(f"{BRI}Origin Sexpr{RST}: {origin_sexpr!r}")
+            LOGGER.info(f"{BRI}Origin Sexpr{RST}: {origin_sexpr!r}")
             if self.through_sexpr_cb(origin_sexpr):
-                print(f"{BYELLOW}Pass through for {origin_sexpr!r}{RST}")
+                LOGGER.info(f"{BYELLOW}Pass through for {origin_sexpr!r}{RST}")
                 os.system(f"touch {dirname}/through.log")
             # elif origin_sexpr.name in self.origin_to_targets:
             #     for target_names in self.origin_to_targets[origin_sexpr.name]:
@@ -274,32 +268,24 @@ class GreedyExplorativeInferManager(InferManager):
             #         self.run_one(
             #             dirname, cut_group, False, group_name, assume_provided=True
             #         )
-            elif (
-                origin_sexpr.name not in self.origin_to_targets
-                and origin_sexpr.op == tgops.inpt
-            ):
+            elif origin_sexpr.name not in self.origin_to_targets and origin_sexpr.op == tgops.inpt:
                 # For input, we don't need to infer postconditions.
                 skipped_inputs.add(origin_sexpr.name)
-                print(f"{BRED}Skipped Inputs{RST}: Not provided.")
+                LOGGER.info(f"{BRED}Skipped Inputs{RST}: Not provided.")
             elif origin_sexpr.op.constant:
                 # For constants, we don't need to infer postconditions if not provided.
-                print(f"{BRED}Skipped Constants{RST}: Not provided.")
+                LOGGER.info(f"{BRED}Skipped Constants{RST}: Not provided.")
             elif origin_sexpr.op.dist and origin_sexpr.op != tgops.dist_wait:
-                print(f"{BYELLOW}Skipped{RST}: DistOp for origin.")
+                LOGGER.info(f"{BYELLOW}Skipped{RST}: DistOp for origin.")
             elif origin_sexpr.name in self.manual_cut_mapping:
-                print(f"{BGREEN}Found user-specified CutGroup.{RST}")
-                target_sexprs = [
-                    self.name_to_sexpr[name]
-                    for name in self.manual_cut_mapping[origin_sexpr.name]
-                ]
+                LOGGER.info(f"{BGREEN}Found user-specified CutGroup.{RST}")
+                target_sexprs = [self.name_to_sexpr[name] for name in self.manual_cut_mapping[origin_sexpr.name]]
                 cut_group = CutGroup(origin_sexpr, target_sexprs)
                 origin_args = list(self.get_mapped_args(origin_sexpr))
                 raw_econditions: set[ECondition] = set()
                 for origin_arg in origin_args:
                     if origin_arg.name in self.origin_to_econditions:
-                        raw_econditions.update(
-                            self.origin_to_econditions[origin_arg.name]
-                        )
+                        raw_econditions.update(self.origin_to_econditions[origin_arg.name])
                 self.run_one(
                     dirname,
                     cut_group,
@@ -318,11 +304,8 @@ class GreedyExplorativeInferManager(InferManager):
                 raw_econditions: set[ECondition] = set()
                 for origin_arg in origin_args:
                     if origin_arg.name in self.origin_to_econditions:
-                        raw_econditions.update(
-                            self.origin_to_econditions[origin_arg.name]
-                        )
-                print(f"{BRI}Origin Args{RST}:", end="")
-                rich.print(origin_args)
+                        raw_econditions.update(self.origin_to_econditions[origin_arg.name])
+                LOGGER.info(f"{BRI}Origin Args{RST}: {rich.pretty.pretty_repr(origin_args)}")
                 assert len(origin_args) > 0, (
                     f"No mapped args found, maybe this is input and you forget providing preconditions?\n"
                     f"{BRI}Inputs without conditions{RST}: {skipped_inputs}"
@@ -332,12 +315,10 @@ class GreedyExplorativeInferManager(InferManager):
                 potential_target_args_list_per_origin_arg: list[list[str]] = []
                 for arg in origin_args:
                     target_args_list = self.get_mapped_targets(arg.name)
-                    potential_target_args_list_per_origin_arg.append(
-                        list(target_args_list)
-                    )
-                print(f"{BRI}Potential Target Args{RST}:", end="")
-                rich.print(potential_target_args_list_per_origin_arg)
-                print()
+                    potential_target_args_list_per_origin_arg.append(list(target_args_list))
+                LOGGER.info(
+                    f"{BRI}Potential Target Args{RST}: {rich.pretty.pretty_repr(potential_target_args_list_per_origin_arg)}\n"
+                )
 
                 # Usually when origin progress one step, target progresses at least one step.
                 # So we start from 1. But at the end, we will still try 0.
@@ -345,12 +326,8 @@ class GreedyExplorativeInferManager(InferManager):
                 all_target_args = set()
 
                 by_sg: dict[SGraph, list[list[SExpr]]] = {}
-                for o_arg_idx, t_args in enumerate(
-                    potential_target_args_list_per_origin_arg
-                ):
-                    t_args = set.union(
-                        *[set(t) for t in t_args]
-                    )  # The element is now a list of tuple, need to flatten
+                for o_arg_idx, t_args in enumerate(potential_target_args_list_per_origin_arg):
+                    t_args = set.union(*[set(t) for t in t_args])  # The element is now a list of tuple, need to flatten
                     for t_arg in t_args:
                         t_sg = self.name_to_sgraph[t_arg]
                         if t_sg not in by_sg:
@@ -358,8 +335,7 @@ class GreedyExplorativeInferManager(InferManager):
                         t_arg = self.name_to_sexpr[t_arg]
                         by_sg[t_sg][o_arg_idx].append(t_arg)
                         all_target_args.add(t_arg)
-                print(f"{BRI}by_sg{RST}=", end="")
-                rich.print(by_sg)
+                LOGGER.info(f"{BRI}by_sg{RST}={rich.pretty.pretty_repr(by_sg)}")
                 if len(by_sg) == 0:
                     raise CannotFindPotentialTargetOutputs(
                         f"{BRED}len(by_sg) is 0, forget providing preconditions for some inputs?{RST}\n"
@@ -368,15 +344,11 @@ class GreedyExplorativeInferManager(InferManager):
 
                 def generate_next_exploration(
                     by_sg: dict[SGraph, list[list[SExpr]]], hop_limit: int
-                ) -> Generator[
-                    tuple[int, bool, set[SExpr], set[SExpr], set[SExpr]], None, None
-                ]:
+                ) -> Generator[tuple[int, bool, set[SExpr], set[SExpr], set[SExpr]], None, None]:
                     begin_sexprs = set()
                     t_outs_per_sg: dict[SGraph, set[SExpr]] = {}
                     for sg, t_args_per_o_arg in by_sg.items():
-                        t_outs_per_sg[sg] = set.union(
-                            *[set(t) for t in t_args_per_o_arg]
-                        )
+                        t_outs_per_sg[sg] = set.union(*[set(t) for t in t_args_per_o_arg])
                     for hop_idx in range(hop_limit):
                         # In each iteration, `t_outs_per_sg` will be updated
                         # with new `common_t_outs` (which also includes the
@@ -391,7 +363,7 @@ class GreedyExplorativeInferManager(InferManager):
                             t_outs_per_sg[sg] = set(common_t_outs)
                             begin_sexprs.update(begin_sexprs_this_sg)
                             one_more_sexprs.update(one_more_sexprs_this_sg)
-                            print(f"For {sg=}, we found {t_outs_per_sg[sg]}")
+                            LOGGER.info(f"For {sg=}, we found {t_outs_per_sg[sg]}")
                         t_outs: set[SExpr] = set.union(*t_outs_per_sg.values())
 
                         # NOTE: yield 1: First, try without one more skeleton node.
@@ -423,11 +395,9 @@ class GreedyExplorativeInferManager(InferManager):
                     t_outs,
                     one_more_sexprs,
                 ) in generate_next_exploration(by_sg, hop_limit=hop_limit):
-                    print(
-                        f"------- {BRI}g{topo_idx}-{hop_idx=}{RST}, {len(t_outs)=}, {len(one_more_sexprs)=}"
-                    )
-                    print(f"{BRI}t_outs{RST}=", end="")
-                    rich.print(sorted(t_outs, key=lambda s: s.name))
+                    LOGGER.info(f"------- {BRI}g{topo_idx}-{hop_idx=}{RST}, {len(t_outs)=}, {len(one_more_sexprs)=}")
+                    LOGGER.info(f"{BRI}t_outs{RST}={rich.pretty.pretty_repr(sorted(t_outs, key=lambda s: s.name))}")
+                    LOGGER.info("")
 
                     if with_one_more and len(one_more_sexprs) == 0:
                         # This can happend when we are trying one more skeleton
@@ -445,9 +415,7 @@ class GreedyExplorativeInferManager(InferManager):
                         # fmt: off
                         jobs = [(hop_idx, t_outs, all_target_args, begin_sexprs, with_one_more, one_more_sexprs)]
                         # fmt: on
-                        print(
-                            f"---------- {BRI}Found {len(jobs)} for {hop_idx=} {with_one_more=}{RST}"
-                        )
+                        LOGGER.info(f"---------- {BRI}Found {len(jobs)} for {hop_idx=} {with_one_more=}{RST}")
 
                     # 1. Jobs prepared, run/start all jobs.
                     # Iteration over hops
@@ -459,32 +427,23 @@ class GreedyExplorativeInferManager(InferManager):
                         with_one_more,
                         one_more_sexprs,
                     ) in jobs:
-                        trial_id = (
-                            f"{hop_idx}.onemore" if with_one_more else f"{hop_idx}"
-                        )
+                        trial_id = f"{hop_idx}.onemore" if with_one_more else f"{hop_idx}"
                         trial_name = f"trial{trial_id}"
                         trial_dirname = osp.join(dirname, trial_id)
-                        print(f"------- Begin {BRI}{trial_name} | {hop_idx=}{RST}")
-                        print(f"{BRI}Trying target_sexprs:{RST}", end="")
-                        rich.print(sorted(target_sexprs, key=lambda s: s.name))
-                        print(f"{BRI}Target Args{RST}:", end="")
-                        rich.print(sorted(target_args, key=lambda s: s.name))
+                        LOGGER.info(f"------- Begin {BRI}{trial_name} | {hop_idx=}{RST}")
+                        LOGGER.info(f"{BRI}Trying target_sexprs:{RST}={rich.pretty.pretty_repr(sorted(target_sexprs, key=lambda s: s.name))}")
+                        LOGGER.info(f"{BRI}Target Args{RST}={rich.pretty.pretty_repr(sorted(target_args, key=lambda s: s.name))}")
 
                         target_sexprs = list(target_sexprs)
                         cut_group = CutGroup(origin_sexpr, target_sexprs)
                         is_only_input = cut_group.is_only_input()
-                        begin_names = set(
-                            [a.name for a in origin_args]
-                            + [s.name for s in begin_sexprs]
-                        )
+                        begin_names = set([a.name for a in origin_args] + [s.name for s in begin_sexprs])
                         args = (trial_dirname, cut_group, is_only_input, trial_dirname)
                         kwargs = {
                             "begin_names": begin_names,
                             "intermediate_name": True,
                             "raw_econditions": list(raw_econditions),
-                            "additional_input_names": {
-                                s.name for s in chain(target_args, target_sexprs)
-                            },
+                            "additional_input_names": {s.name for s in chain(target_args, target_sexprs)},
                         }
 
                         if async_run:
@@ -512,7 +471,7 @@ class GreedyExplorativeInferManager(InferManager):
                                 one_more_sexprs,
                             )
                         )
-                        print(f"------- {BRI}g{topo_idx}-{trial_name}{RST}: {status}")
+                        LOGGER.info(f"------- {BRI}g{topo_idx}-{trial_name}{RST}: {status}")
 
                     # We only continue to process results when it is `with_one_more`
                     if not with_one_more:
@@ -520,7 +479,7 @@ class GreedyExplorativeInferManager(InferManager):
 
                     # 2. Wait for processes at the end of `hop_idx` iteration.
                     collected_post_info: list[tuple[ECondition, CutGroup, str]] = []
-                    print(f"----------------- {BRI}Callbacks for {hop_idx=}{RST}")
+                    LOGGER.info(f"----------------- {BRI}Callbacks for {hop_idx=}{RST}")
                     for (
                         run_one_res,
                         trial_name,
@@ -544,14 +503,10 @@ class GreedyExplorativeInferManager(InferManager):
                         else:
                             status = f"{BGREEN}Success{RST}"
                         finally:
-                            print(
-                                f"------- {BRI}g{topo_idx}-{trial_name}{RST}: {status}"
-                            )
+                            LOGGER.info(f"------- {BRI}g{topo_idx}-{trial_name}{RST}: {status}")
                         postcondition_str = egg_runner.get_postcondition(trial_dirname)
                         postcondition = ECondition.from_str(postcondition_str)
-                        collected_post_info.append(
-                            (postcondition, cut_group, trial_dirname, one_more_sexprs)
-                        )
+                        collected_post_info.append((postcondition, cut_group, trial_dirname, one_more_sexprs))
                     callback_and_infos = []
 
                     # 3. Add postconditions and update conditioned names.
@@ -583,7 +538,7 @@ class GreedyExplorativeInferManager(InferManager):
                         self.conditioned_names.update([c.name for c in cut_group.cuts])
                         if postcondition is not None:
                             self.map_origin_to_targets(kept_econditions)
-                        print(
+                        LOGGER.info(
                             f"------------------------- Done {BRI}g{topo_idx}-{trial_name}{RST}: {succeed=}, {until_found_new=}, {len(kept_econditions)=}"
                         )
                         if not any_new:
@@ -603,13 +558,13 @@ class GreedyExplorativeInferManager(InferManager):
                     # NOTE: if `starting_from_inputs`, allow no postcondition.
                     # Log conditions for debugging.
                     if self.egg_runner.verbose:
-                        print("======================================================")
+                        LOGGER.info("======================================================")
                         for ec in self.econditions:
-                            rich.print(ec)
-                        print("------------------------------------------------------")
-                        rich.print(self.origin_to_targets)
+                            LOGGER.info(ec)
+                        LOGGER.info("------------------------------------------------------")
+                        LOGGER.info(self.origin_to_targets)
                     elapsed = datetime.now() - all_begin_date
-                    print(f"{BRED}Stopped, time elapsed: {elapsed}{RST}")
+                    LOGGER.info(f"{BRED}Stopped, time elapsed: {elapsed}{RST}")
                     # Save state.
                     self.through_sexpr_cb = None
                     self.save(osp.join(dirname, "checkpoint.pkl"))
@@ -621,8 +576,8 @@ class GreedyExplorativeInferManager(InferManager):
 
             elapsed = datetime.now() - begin_date
             all_elapsed = datetime.now() - all_begin_date
-            print_ft(f"Done with {BRI}{group_name}{RST} in {elapsed}/{all_elapsed}")
-            print()
+            LOGGER.info_ft(f"Done with {BRI}{group_name}{RST} in {elapsed}/{all_elapsed}")
+            LOGGER.info("")
 
     def save(self, path):
         self.global_states = entangle.get_global_states()
@@ -630,12 +585,8 @@ class GreedyExplorativeInferManager(InferManager):
 
     def resume(self, resumed: "GreedyExplorativeInferManager"):
         self.way: Callable[[Unpack[set]], set] = resumed.way
-        self.origin_to_targets: dict[str, set[tuple[Unpack[str]]]] = (
-            resumed.origin_to_targets
-        )
-        self.origin_to_econditions: dict[str, set[ECondition]] = (
-            resumed.origin_to_targets
-        )
+        self.origin_to_targets: dict[str, set[tuple[Unpack[str]]]] = resumed.origin_to_targets
+        self.origin_to_econditions: dict[str, set[ECondition]] = resumed.origin_to_targets
         self.origin_sgraph: SGraph = resumed.origin_sgraph
         self.target_sgraphs: list[SGraph] = resumed.target_sgraphs
         self.cut_groups: list[CutGroup] = resumed.cut_groups

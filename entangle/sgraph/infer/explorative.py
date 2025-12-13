@@ -1,5 +1,8 @@
 # Copyright (c) 2025 ByteDance Ltd. and/or its affiliates
 #
+# Modifications Copyright (c) 2025 [Zhanghan Wang]
+# Note: Support better logging.
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -34,9 +37,9 @@ from entangle.sgraph.sgraph import SGraph
 from entangle.sgraph.sskeleton import CutGroup
 from entangle.sgraph.transform import CannotMatchAllDistOps
 from entangle.tools.egg import EggRunner
-from entangle.utils.print_utils import BGREEN, BRED, BRI, BYELLOW, RST, print_ft
+from entangle.utils.print_utils import BGREEN, BRED, BRI, BYELLOW, RST, print_ft, get_global_logger
 
-logger = logging.getLogger(__name__)
+LOGGER = None
 
 
 class CannotFindPotentialTargetOutputs(Exception): ...
@@ -63,6 +66,9 @@ class ExplorativeInferManager(InferManager):
         super().__init__(
             origin_sgraph, target_sgraphs, cut_groups, egg_runner, save_group
         )
+        global LOGGER
+        LOGGER = get_global_logger()
+
         if through_sexpr_cb is None:
             through_sexpr_cb = lambda _: False
         self.through_sexpr_cb = through_sexpr_cb
@@ -85,7 +91,7 @@ class ExplorativeInferManager(InferManager):
 
     def get_mapped_targets(self, origin_name: str) -> list[list[str]]:
         if origin_name not in self.origin_to_targets:
-            print(
+            LOGGER.info(
                 f"{BYELLOW}Warning: No mapped targets found for {origin_name}.{RST} "
                 f"This is only valid for those empty tensors for inplace ops."
             )
@@ -198,7 +204,7 @@ class ExplorativeInferManager(InferManager):
         if origin_inpt not in self.origin_to_targets:
             self.origin_to_targets[origin_inpt] = set()
         new = tuple(sorted([t for t in target_inpts]))
-        rich.print(f"origin={origin_inpt} <---> targets={new}")
+        LOGGER.info(f"origin={origin_inpt} <---> targets={new}")
         self.origin_to_targets[origin_inpt].add(new)
         if origin_inpt not in self.origin_to_econditions:
             self.origin_to_econditions[origin_inpt] = set()
@@ -251,13 +257,13 @@ class ExplorativeInferManager(InferManager):
             dirname = osp.join(root_dirname, group_name)
             os.makedirs(dirname, exist_ok=True)
 
-            print_ft(f"{BRI}{group_name}{RST}")
+            LOGGER.info_ft(f"{BRI}{group_name}{RST}")
 
             origin_attr = self.origin_sgraph.nx_graph.nodes[origin_sexpr_id]
             origin_sexpr: SExpr = origin_attr["sexpr"]
-            print(f"{BRI}Origin Sexpr{RST}: {origin_sexpr!r}")
+            LOGGER.info(f"{BRI}Origin Sexpr{RST}: {origin_sexpr!r}")
             if self.through_sexpr_cb(origin_sexpr):
-                print(f"{BYELLOW}Pass through for {origin_sexpr!r}{RST}")
+                LOGGER.info(f"{BYELLOW}Pass through for {origin_sexpr!r}{RST}")
                 os.system(f"touch {dirname}/through.log")
             elif origin_sexpr.name in self.origin_to_targets:
                 for target_names in self.origin_to_targets[origin_sexpr.name]:
@@ -268,14 +274,14 @@ class ExplorativeInferManager(InferManager):
                     )
             elif origin_sexpr.op == tgops.inpt:
                 # For input, we don't need to infer postconditions.
-                print(f"{BRED}Skipped{RST}: Not provided.")
+                LOGGER.info(f"{BRED}Skipped{RST}: Not provided.")
             elif origin_sexpr.op.constant:
                 # For constants, we don't need to infer postconditions if not provided.
-                print(f"{BRED}Skipped{RST}: Not provided.")
+                LOGGER.info(f"{BRED}Skipped{RST}: Not provided.")
             elif origin_sexpr.op.dist and origin_sexpr.op != tgops.dist_wait:
-                print(f"{BYELLOW}Skipped{RST}: DistOp for origin.")
+                LOGGER.info(f"{BYELLOW}Skipped{RST}: DistOp for origin.")
             elif origin_sexpr.name in self.manual_cut_mapping:
-                print(f"{BGREEN}Found user-specified CutGroup.{RST}")
+                LOGGER.info(f"{BGREEN}Found user-specified CutGroup.{RST}")
                 target_sexprs = [
                     self.name_to_sexpr[name]
                     for name in self.manual_cut_mapping[origin_sexpr.name]
@@ -292,8 +298,8 @@ class ExplorativeInferManager(InferManager):
                         raw_econditions.update(
                             self.origin_to_econditions[origin_arg.name]
                         )
-                print(f"{BRI}Origin Args{RST}:", end="")
-                rich.print(origin_args)
+                LOGGER.info(f"{BRI}Origin Args{RST}:", end="")
+                LOGGER.info(origin_args)
                 assert (
                     len(origin_args) > 0
                 ), "No mapped args found, maybe this is input and you forget providing preconditions?"
@@ -305,9 +311,9 @@ class ExplorativeInferManager(InferManager):
                     potential_target_args_list_per_origin_arg.append(
                         list(target_args_list)
                     )
-                print(f"{BRI}Potential Target Args{RST}:", end="")
-                rich.print(potential_target_args_list_per_origin_arg)
-                print()
+                LOGGER.info(f"{BRI}Potential Target Args{RST}:", end="")
+                LOGGER.info(potential_target_args_list_per_origin_arg)
+                LOGGER.info()
 
                 hint_ops_for_this = hint_ops.get(origin_sexpr.op, None)
 
@@ -330,8 +336,8 @@ class ExplorativeInferManager(InferManager):
                         t_arg = self.name_to_sexpr[t_arg]
                         by_sg[t_sg][o_arg_idx].append(t_arg)
                         all_target_args.add(t_arg)
-                print(f"{BRI}by_sg{RST}=", end="")
-                rich.print(by_sg)
+                LOGGER.info(f"{BRI}by_sg{RST}=", end="")
+                LOGGER.info(by_sg)
                 if len(by_sg) == 0:
                     raise CannotFindPotentialTargetOutputs(
                         f"{BRED}len(by_sg) is 0, forget providing preconditions for some inputs?{RST}"
@@ -339,7 +345,7 @@ class ExplorativeInferManager(InferManager):
 
                 zero_succeed = False
                 for limit in chain(range(1, 8), [0]):
-                    print(f"------- {BRI}g{topo_idx}-{limit=}{RST}")
+                    LOGGER.info(f"------- {BRI}g{topo_idx}-{limit=}{RST}")
                     succeed = False
                     t_outs_per_sg = []
                     for sg, t_args_per_o_arg in by_sg.items():
@@ -354,13 +360,13 @@ class ExplorativeInferManager(InferManager):
                             way=set.union,
                         )
                         t_outs_per_sg.append(set(common_t_outs))
-                        print(f"For {sg=}, we found {t_outs_per_sg[-1]}")
+                        LOGGER.info(f"For {sg=}, we found {t_outs_per_sg[-1]}")
                     t_outs: set[SExpr] = set.union(*t_outs_per_sg)
                     # Filter t_outs by skeleton nodes
                     if origin_sexpr.op.skeleton:
                         t_outs = set(filter(lambda s: s.op == origin_sexpr.op, t_outs))
-                    print(f"{BRI}t_outs{RST}=", end="")
-                    rich.print(sorted(t_outs, key=lambda s: s.name))
+                    LOGGER.info(f"{BRI}t_outs{RST}=", end="")
+                    LOGGER.info(sorted(t_outs, key=lambda s: s.name))
 
                     if len(t_outs) == 0:
                         continue
@@ -372,7 +378,7 @@ class ExplorativeInferManager(InferManager):
                             jobs = [(limit, 0, 0, actual_t_outs, all_target_args)]
                     else:
                         jobs = [(0, 0, 0, t_outs, all_target_args)]
-                    print(f"---------- {BRI}Found {len(jobs)} for {limit=}{RST}")
+                    LOGGER.info(f"---------- {BRI}Found {len(jobs)} for {limit=}{RST}")
                     if len(jobs) == 0:
                         continue
                     # Run all jobs
@@ -392,11 +398,11 @@ class ExplorativeInferManager(InferManager):
                         trial_id = f"{limit}.{args_trial_idx}.{sexprs_trial_idx}"
                         trial_name = f"trial{trial_id}"
                         trial_dirname = osp.join(dirname, trial_id)
-                        print(f"------- Begin {BRI}{trial_name} | {limit=}{RST}")
-                        print(f"{BRI}Trying target_sexprs:{RST}", end="")
-                        rich.print(sorted(target_sexprs, key=lambda s: s.name))
-                        print(f"{BRI}Target Args{RST}:", end="")
-                        rich.print(sorted(target_args, key=lambda s: s.name))
+                        LOGGER.info(f"------- Begin {BRI}{trial_name} | {limit=}{RST}")
+                        LOGGER.info(f"{BRI}Trying target_sexprs:{RST}", end="")
+                        LOGGER.info(sorted(target_sexprs, key=lambda s: s.name))
+                        LOGGER.info(f"{BRI}Target Args{RST}:", end="")
+                        LOGGER.info(sorted(target_args, key=lambda s: s.name))
 
                         target_sexprs = list(target_sexprs)
                         cut_group = CutGroup(origin_sexpr, target_sexprs)
@@ -429,12 +435,12 @@ class ExplorativeInferManager(InferManager):
                             else:
                                 status = f"{BGREEN}Success{RST}"
                         callback_and_infos.append((res, trial_dirname, cut_group))
-                        print(f"------- {BRI}g{topo_idx}-{trial_name}{RST}: {status}")
+                        LOGGER.info(f"------- {BRI}g{topo_idx}-{trial_name}{RST}: {status}")
                     if async_run:
                         executor.shutdown(wait=True)
 
                     # Wait for processes at the end of `limit` iteration.
-                    print(f"----------------- {BRI}Callbacks for {limit=}{RST}")
+                    LOGGER.info(f"----------------- {BRI}Callbacks for {limit=}{RST}")
                     for run_one_res, trial_dirname, cut_group in callback_and_infos:
                         # assert process is not None
                         try:
@@ -454,7 +460,7 @@ class ExplorativeInferManager(InferManager):
                         else:
                             status = f"{BGREEN}Success{RST}"
                         finally:
-                            print(
+                            LOGGER.info(
                                 f"------- {BRI}g{topo_idx}-{trial_name}{RST}: {status}"
                             )
                         postcondition_str = egg_runner.get_postcondition(trial_dirname)
@@ -485,7 +491,7 @@ class ExplorativeInferManager(InferManager):
                             self.map_origin_to_targets(
                                 ECondition.merge(*kept_econditions)
                             )
-                    print(
+                    LOGGER.info(
                         f"------------------------- Done {BRI}g{topo_idx}-{trial_name}{RST}: {succeed=}\n"
                     )
                     if limit == 0:
@@ -495,13 +501,13 @@ class ExplorativeInferManager(InferManager):
 
                 if not (succeed or zero_succeed):
                     # Log conditions for debugging.
-                    print("========================================================")
+                    LOGGER.info("========================================================")
                     for ec in self.econditions:
-                        rich.print(ec)
-                    print("--------------------------------------------------------")
-                    rich.print(self.origin_to_targets)
+                        LOGGER.info(ec)
+                    LOGGER.info("--------------------------------------------------------")
+                    LOGGER.info(self.origin_to_targets)
                     elapsed = datetime.now() - all_begin_date
-                    print(f"{BRED}Stopped, time elapsed: {elapsed}{RST}")
+                    LOGGER.info(f"{BRED}Stopped, time elapsed: {elapsed}{RST}")
                     # Save state.
                     self.through_sexpr_cb = None
                     self.save(osp.join(dirname, "checkpoint.pkl"))
@@ -509,8 +515,8 @@ class ExplorativeInferManager(InferManager):
 
             elapsed = datetime.now() - begin_date
             all_elapsed = datetime.now() - all_begin_date
-            print_ft(f"Done with {BRI}{group_name}{RST} in {elapsed}/{all_elapsed}")
-            print()
+            LOGGER.info_ft(f"Done with {BRI}{group_name}{RST} in {elapsed}/{all_elapsed}")
+            LOGGER.info()
 
     def save(self, path):
         self.global_states = entangle.get_global_states()
