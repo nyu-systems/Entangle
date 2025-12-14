@@ -282,7 +282,8 @@ def plot_performance():
     all_df["ModelLabel"] = all_df.apply(lambda row: f"{row['Model']}\n({row['#of Nodes']})", axis=1)
     fig = plt.figure(figsize=(1.618 * 3, 1 * 3))
     ax = fig.gca()
-    all_df.plot.bar(x="ModelLabel", y="Total Time", color=COLORS, ax=ax)
+    # use colors from third one because we removed the first two for company's.
+    all_df.plot.bar(x="ModelLabel", y="Total Time", color=COLORS[2:], ax=ax)
     ax.set_xlabel("")
     ax.set_ylabel("Total Time (s)")
     ax.xaxis.set_tick_params(rotation=0)
