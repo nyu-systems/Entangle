@@ -213,9 +213,8 @@ The figures will be saved to `examples/figures`, including
 
 For your convenience, we also provide reference figures in [examples/reference_figures](./examples/reference_figures) to compare.
 
-#### 4. (Optional) Try for Your Models
 
-Refer to [Use Your Own Models](#use-your-own-models) for instructions on capturing graphs from your own models and running verification.
+**End of Artifact Evaluation Instructions**
 
 -----
 
