@@ -45,7 +45,7 @@ If you are using CloudLab, we provide a CloudLab profile and a single script to 
 You can find the profile [here](https://www.cloudlab.us/p/rdma-prefetch/Entangle). After starting an experiment with this profile, login to the shell and run the following commands to setup (you don't need to clone the repository in advance):
 
 ```sh
-wget https://raw.githubusercontent.com/nyu-systems/Entangle/refs/heads/main/cloudlab_setup.sh -O $HOME/cloudlab_setup.sh && source $HOME/cloudlab_setup.sh
+wget https://raw.githubusercontent.com/nyu-systems/Entangle/refs/heads/main/setup.sh -O $HOME/setup.sh && source $HOME/setup.sh
 ```
 
 The script will
