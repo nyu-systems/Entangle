@@ -149,16 +149,10 @@ echo -e "\033[1;32m-------------------------------------------------------------
 # Setup Entangle Python environment
 echo -e "\033[1;32m---------------------------------------------------------------------\033[0m"
 echo -e "\033[1;32mSetting up Python environment...\033[0m"
-cd $WORKDIR/Entangle && uv sync --link-mode copy
+cd $WORKDIR/Entangle && uv sync --link-mode copy --no-cache
 echo "source $WORKDIR/Entangle/.venv/bin/activate" >> $SHELL_PROFILE
 
 # Activate the environment
 echo -e "\033[1;32m---------------------------------------------------------------------\033[0m"
 echo -e "\033[1;32mActivating Python environment...\033[0m"
 source .venv/bin/activate
-
-# Install Entangle Python package
-echo -e "\033[1;32m---------------------------------------------------------------------\033[0m"
-echo -e "\033[1;32mInstalling Entangle Python package...\033[0m"
-pip install -e . --force-reinstall
-echo -e "\033[1;32m---------------------------------------------------------------------\033[0m"
