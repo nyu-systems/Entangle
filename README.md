@@ -88,6 +88,11 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 # This command installs `entangle` and `torchgraph`(deprecated) python packages and `tg` and `tginfer` commands.
 pip install -e .
 
+# Alternatively, if you are using `uv`, run the 3 commands below:
+# uv venv
+# uv sync
+# source .venv/bin/activate
+
 # 3. Build egger and then go back.
 cd egger && cargo build --release && cd ..
 ```
