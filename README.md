@@ -1,4 +1,4 @@
-<div align="center">
+<!-- <div align="center">
  👋 Hi, everyone! 
     <br>
     We are <b>ByteDance Seed team.</b>
@@ -19,7 +19,7 @@
 
 <p align="center" style="margin-top: -20px; margin-bottom: -30px;">
     <img src=https://github.com/user-attachments/assets/c42e675e-497c-4508-8bb9-093ad4d1f216 style="width: 40%">
-</p>
+</p> -->
 
 # Entangle
 
