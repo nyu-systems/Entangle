@@ -292,6 +292,14 @@ If your model used new operatros, you will need to also
 - Define new operators. Examples can be found [here](./egger/src/special). 
 - Define new lemmas regarding new operators if necessary. Examples can be found [here](./egger/src/special).
 
+-----
+
+## Others
+
+- [AI-generated Project page and interactive demos](https://rabbitwhite1.github.io/projects/entangle/)
+- [Published paper](https://doi.org/10.1145/3779212.3790178)
+- [Paper PDF](https://rabbitwhite1.github.io/projects/entangle/paper.pdf)
+- [Older version](https://arxiv.org/abs/2508.09505)
 
 -----
 
